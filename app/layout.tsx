@@ -1,4 +1,4 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { ClerkProvider } from "@clerk/nextjs"
 import { NetworkStatusBanner } from "@/components/network-status-banner"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -7,6 +7,14 @@ import "./globals.css"
 export const metadata: Metadata = {
   title: "DarDoc",
   description: "Boom Health dashboard design implementation",
+}
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 }
 
 export const dynamic = "force-dynamic"

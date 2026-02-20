@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CalendarX2, SearchX } from "lucide-react"
+import { CalendarX2, ChevronRight, SearchX } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -23,7 +23,6 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { BookingTableRow } from "@/lib/bookings/types"
-import { formatAedAmount } from "@/lib/currency"
 import { cn } from "@/lib/utils"
 
 type BookingsTableProps = {
@@ -48,6 +47,50 @@ const statusStyles: Record<BookingTableRow["status"], string> = {
   "Result Ready": "text-emerald-300 border-emerald-400/40 bg-emerald-500/10",
   Cancelled: "text-rose-300 border-rose-400/40 bg-rose-500/10",
   Unknown: "text-slate-300 border-slate-400/40 bg-slate-500/10",
+}
+
+const DISPLAY_TIME_ZONE = "Asia/Dubai"
+
+function formatReadableDate(value?: string | null) {
+  if (!value) return null
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: DISPLAY_TIME_ZONE,
+  }).format(parsed)
+}
+
+function formatReadableTime(value?: string | null) {
+  if (!value) return null
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: DISPLAY_TIME_ZONE,
+  }).format(parsed)
+}
+
+function getReadableDate(row: BookingTableRow) {
+  return formatReadableDate(row.startAt) || row.date
+}
+
+function getReadableTimeSlot(row: BookingTableRow) {
+  const start = formatReadableTime(row.startAt)
+  const end = formatReadableTime(row.endAt)
+
+  if (start && end) return `${start} - ${end}`
+  if (start) return start
+  return row.slot
 }
 
 export function BookingsTable({
@@ -127,7 +170,7 @@ export function BookingsTable({
               {hasFilters ? (
                 <Button
                   variant="outline"
-                  className="md:w-auto"
+                  className="w-full md:w-auto"
                   onClick={() => {
                     setSearch("")
                     setStatus("All")
@@ -193,56 +236,65 @@ export function BookingsTable({
           ) : (
             <>
               <div className="space-y-3 md:hidden">
-                {paginatedRows.map((row) => (
-                  <div
-                    key={row.bookingId}
-                    onClick={() => onRowSelect?.(row)}
-                    onKeyDown={(event) => {
-                      if (!onRowSelect) return
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault()
-                        onRowSelect(row)
-                      }
-                    }}
-                    tabIndex={onRowSelect ? 0 : undefined}
-                    role={onRowSelect ? "button" : undefined}
-                    className={cn(
-                      "rounded-lg border p-3",
-                      onRowSelect &&
-                        "cursor-pointer transition-colors hover:bg-muted/40"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-semibold">{row.bookingId}</p>
-                      <Badge variant="outline" className={statusStyles[row.status]}>
-                        {row.status}
-                      </Badge>
-                    </div>
-                    <div className="mt-3 space-y-1 text-sm">
-                      <p>
-                        <span className="text-muted-foreground">Patient: </span>
-                        {row.patientName}
-                      </p>
-                      <p>
-                        <span className="text-muted-foreground">Test: </span>
-                        {row.testName}
-                      </p>
-                      <p>
-                        <span className="text-muted-foreground">Date: </span>
-                        {row.date}
-                      </p>
-                      <p>
-                        <span className="text-muted-foreground">Slot: </span>
-                        {row.slot}
-                      </p>
-                      <p className="pt-1 font-medium tabular-nums">
-                        {formatAedAmount(row.amount)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                {paginatedRows.map((row) => {
+                  const readableDate = getReadableDate(row)
+                  const readableTimeSlot = getReadableTimeSlot(row)
 
+                  return (
+                    <div
+                      key={row.bookingId}
+                      className="bg-card rounded-xl border border-border/70 p-4 shadow-xs"
+                    >
+                      <div className="border-b border-border/60 pb-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                              Booking ID
+                            </p>
+                            <p className="truncate text-sm font-semibold">{row.bookingId}</p>
+                          </div>
+                          <Badge variant="outline" className={statusStyles[row.status]}>
+                            {row.status}
+                          </Badge>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <Badge variant="outline" className="text-xs">
+                            {readableDate}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {readableTimeSlot}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-2 text-sm">
+                        <div className="grid grid-cols-[84px_1fr] items-start gap-2">
+                          <span className="text-muted-foreground text-xs font-medium">
+                            Patient
+                          </span>
+                          <span className="truncate text-right">{row.patientName}</span>
+                        </div>
+                        <div className="grid grid-cols-[84px_1fr] items-start gap-2">
+                          <span className="text-muted-foreground text-xs font-medium">
+                            Test
+                          </span>
+                          <span className="truncate text-right">{row.testName}</span>
+                        </div>
+                      </div>
+                      {onRowSelect ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="mt-4 w-full justify-between"
+                          onClick={() => onRowSelect(row)}
+                        >
+                          View Details
+                          <ChevronRight className="size-4" />
+                        </Button>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
               <div className="hidden md:block">
                 <Table className="min-w-[760px]">
                   <TableHeader>
@@ -253,43 +305,44 @@ export function BookingsTable({
                       <TableHead>Date</TableHead>
                       <TableHead>Slot</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paginatedRows.map((row) => (
-                      <TableRow
-                        key={row.bookingId}
-                        onClick={() => onRowSelect?.(row)}
-                        onKeyDown={(event) => {
-                          if (!onRowSelect) return
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault()
-                            onRowSelect(row)
-                          }
-                        }}
-                        tabIndex={onRowSelect ? 0 : undefined}
-                        role={onRowSelect ? "button" : undefined}
-                        className={cn(onRowSelect && "cursor-pointer hover:bg-muted/40")}
-                      >
-                        <TableCell className="font-medium">{row.bookingId}</TableCell>
-                        <TableCell>{row.patientName}</TableCell>
-                        <TableCell>{row.testName}</TableCell>
-                        <TableCell>{row.date}</TableCell>
-                        <TableCell>{row.slot}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={statusStyles[row.status]}
-                          >
-                            {row.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatAedAmount(row.amount)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {paginatedRows.map((row) => {
+                      const readableDate = getReadableDate(row)
+                      const readableTimeSlot = getReadableTimeSlot(row)
+
+                      return (
+                        <TableRow
+                          key={row.bookingId}
+                          onClick={() => onRowSelect?.(row)}
+                          onKeyDown={(event) => {
+                            if (!onRowSelect) return
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault()
+                              onRowSelect(row)
+                            }
+                          }}
+                          tabIndex={onRowSelect ? 0 : undefined}
+                          role={onRowSelect ? "button" : undefined}
+                          className={cn(onRowSelect && "cursor-pointer hover:bg-muted/40")}
+                        >
+                          <TableCell className="font-medium">{row.bookingId}</TableCell>
+                          <TableCell>{row.patientName}</TableCell>
+                          <TableCell>{row.testName}</TableCell>
+                          <TableCell>{readableDate}</TableCell>
+                          <TableCell>{readableTimeSlot}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={statusStyles[row.status]}
+                            >
+                              {row.status}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </div>
