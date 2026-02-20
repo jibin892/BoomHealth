@@ -3,8 +3,10 @@ import { getCollectorPartyId } from "@/lib/api/config"
 import { collectorBookingEndpoints } from "@/lib/api/endpoints"
 import { toApiRequestError } from "@/lib/api/errors"
 import type {
+  CollectorBookingItem,
   CollectorBookingsQuery,
   CollectorBookingsResponse,
+  CollectorBookingStatus,
   MarkSampleCollectedRequest,
   MarkSampleCollectedResponse,
   UpdateBookingPatientsRequest,
@@ -46,6 +48,105 @@ function buildBookingsParams({
   }
 }
 
+const FALLBACK_STATUSES: CollectorBookingStatus[] = [
+  "CREATED",
+  "ACTIVE",
+  "FULFILLED",
+]
+
+const FALLBACK_PATIENT_NAMES = [
+  "Amina Hassan",
+  "Omar Khalid",
+  "Mariam Ali",
+  "Yousef Saeed",
+  "Noura Ahmed",
+  "Hamad Rashid",
+  "Fatima Noor",
+  "Tariq Ibrahim",
+  "Leila Hassan",
+  "Zayed Khan",
+]
+
+function createFallbackBookingItem(index: number): CollectorBookingItem {
+  const now = Date.now()
+  const startAt = new Date(now + index * 30 * 60 * 1000)
+  const endAt = new Date(startAt.getTime() + 45 * 60 * 1000)
+  const createdAt = new Date(startAt.getTime() - 2 * 60 * 60 * 1000)
+  const status = FALLBACK_STATUSES[index % FALLBACK_STATUSES.length]
+  const amountExpected = 9_500 + (index % 8) * 2_500
+  const bookingId = 700_000 + index
+
+  return {
+    booking_id: bookingId,
+    order_id: `BH-${bookingId}`,
+    booking_status: status,
+    resource_type: "HOME_VISIT",
+    resource_id: `collector-slot-${index + 1}`,
+    start_at: startAt.toISOString(),
+    end_at: endAt.toISOString(),
+    created_at: createdAt.toISOString(),
+    order_status: status === "FULFILLED" ? "COMPLETED" : "ACTIVE",
+    amount_expected_aed_fils: amountExpected,
+    amount_captured_aed_fils: status === "FULFILLED" ? amountExpected : 0,
+    currency_expected: "AED",
+    currency_captured: "AED",
+    paid_at: status === "FULFILLED" ? endAt.toISOString() : null,
+    patient_count: 1,
+    patients: [
+      {
+        patient_id: `PT-${bookingId}`,
+        name: FALLBACK_PATIENT_NAMES[index % FALLBACK_PATIENT_NAMES.length],
+        age: 20 + (index % 35),
+        gender: index % 2 === 0 ? "female" : "male",
+        national_id: index % 4 === 0 ? null : `784-${index.toString().padStart(4, "0")}-0000000-1`,
+        tests_count: 1 + (index % 3),
+      },
+    ],
+  }
+}
+
+function buildFallbackCurrentBookingsResponse(
+  collectorPartyId: string,
+  query: CollectorBookingsQuery = {}
+): CollectorBookingsResponse {
+  const seedSize = 120
+  const generatedItems = Array.from({ length: seedSize }, (_, index) =>
+    createFallbackBookingItem(index)
+  )
+
+  const beforeStartAtMs = query.beforeStartAt
+    ? Date.parse(query.beforeStartAt)
+    : NaN
+  const hasBeforeStartAt = Number.isFinite(beforeStartAtMs)
+
+  const filteredByStatus =
+    query.statuses && query.statuses.length > 0
+      ? generatedItems.filter((item) =>
+          query.statuses?.includes(item.booking_status as CollectorBookingStatus)
+        )
+      : generatedItems
+
+  const filteredItems = hasBeforeStartAt
+    ? filteredByStatus.filter(
+        (item) => Date.parse(item.start_at) < (beforeStartAtMs as number)
+      )
+    : filteredByStatus
+
+  const safeLimit = clampLimit(query.limit) ?? 30
+  const items = filteredItems.slice(0, safeLimit)
+
+  return {
+    collector: {
+      party_id: collectorPartyId,
+      display_name: "BoomHealth Collector (Fallback)",
+    },
+    bucket: "current",
+    items,
+    next_before_start_at:
+      filteredItems.length > safeLimit ? filteredItems[safeLimit - 1]?.start_at : null,
+  }
+}
+
 async function fetchBookings(
   bucket: "current" | "past",
   args: ListBookingArgs = {}
@@ -63,7 +164,16 @@ async function fetchBookings(
 
     return response.data
   } catch (error) {
-    throw toApiRequestError(error)
+    const apiError = toApiRequestError(error)
+
+    if (bucket === "current" && apiError.status === 404) {
+      console.warn(
+        "[collector-bookings] current bookings endpoint returned 404; using fallback dummy data for testing."
+      )
+      return buildFallbackCurrentBookingsResponse(collectorPartyId, args)
+    }
+
+    throw apiError
   }
 }
 

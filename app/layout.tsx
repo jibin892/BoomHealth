@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { ClerkProvider } from "@clerk/nextjs"
+import { NetworkStatusBanner } from "@/components/network-status-banner"
 import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
 
@@ -38,6 +39,7 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
+            <NetworkStatusBanner />
             {children}
           </ThemeProvider>
         </body>

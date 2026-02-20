@@ -1,10 +1,9 @@
 export type BookingStatus =
   | "Pending"
   | "Confirmed"
-  | "Collected"
-  | "In Lab"
   | "Result Ready"
   | "Cancelled"
+  | "Unknown"
 
 export type BookingPatient = {
   patientId: string
@@ -19,6 +18,15 @@ export type BookingTableRow = {
   bookingId: string
   apiBookingId?: number
   orderId?: string | null
+  bookingStatusRaw?: string
+  orderStatus?: string | null
+  resourceType?: string | null
+  resourceId?: string | null
+  startAt?: string
+  endAt?: string | null
+  createdAt?: string | null
+  paidAt?: string | null
+  patientCount?: number | null
   patientName: string
   testName: string
   date: string
@@ -26,5 +34,4 @@ export type BookingTableRow = {
   status: BookingStatus
   amount: string | number
   patients?: BookingPatient[]
-  bookingStatusRaw?: string
 }

@@ -53,9 +53,9 @@ const slots = [
 const statuses: BookingTableRow["status"][] = [
   "Pending",
   "Confirmed",
-  "Collected",
-  "In Lab",
   "Result Ready",
+  "Cancelled",
+  "Unknown",
 ]
 
 export const bookingRows: BookingTableRow[] = Array.from(
@@ -80,8 +80,8 @@ export const bookingRows: BookingTableRow[] = Array.from(
 const pendingCount = bookingRows.filter(
   (booking) => booking.status === "Pending"
 ).length
-const inTransitCount = bookingRows.filter(
-  (booking) => booking.status === "Collected" || booking.status === "In Lab"
+const activeCount = bookingRows.filter(
+  (booking) => booking.status === "Confirmed"
 ).length
 const resultReadyCount = bookingRows.filter(
   (booking) => booking.status === "Result Ready"
@@ -103,10 +103,10 @@ export const bookingOverviewCards: OverviewCardItem[] = [
     trend: "down",
   },
   {
-    title: "Samples In Transit",
-    value: `${inTransitCount}`,
+    title: "Active Bookings",
+    value: `${activeCount}`,
     change: "+5.7%",
-    summary: "Courier pickup and lab handover queue",
+    summary: "Active collector assignments",
     trend: "up",
   },
   {

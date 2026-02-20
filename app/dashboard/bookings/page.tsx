@@ -6,11 +6,13 @@ import { RefreshCw } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import {
   BookingFormDialog,
+  type SaveBookingPatientsInput,
   type SubmitSampleCollectionInput,
 } from "@/components/dashboard/booking-form-dialog"
 import { BookingsTable } from "@/components/dashboard/bookings-table"
 import { OverviewCards } from "@/components/dashboard/overview-cards"
 import { MobileBottomNav } from "@/components/mobile-bottom-nav"
+import { PageErrorState } from "@/components/ui/page-error-state"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -32,7 +34,7 @@ import {
   updateCollectorBookingPatients,
 } from "@/lib/api/collector-bookings"
 import type { CollectorBookingBucket } from "@/lib/api/collector-bookings.types"
-import { getApiErrorMessage } from "@/lib/api/errors"
+import { getApiErrorMessage, isNetworkApiError } from "@/lib/api/errors"
 import {
   buildBookingOverviewCards,
   mapCollectorBookingToTableRow,
@@ -49,6 +51,19 @@ function createSampleEventId(booking: BookingTableRow) {
   return `evt_sample_${booking.orderId || booking.bookingId}_${Date.now()}`
 }
 
+function mapPatientUpdatesToApi(
+  updates: SaveBookingPatientsInput["updates"]
+) {
+  return updates.map((update) => ({
+    current_patient_id: update.currentPatientId,
+    ...(update.newPatientId ? { new_patient_id: update.newPatientId } : {}),
+    ...(update.name ? { name: update.name } : {}),
+    ...(update.age !== undefined ? { age: update.age } : {}),
+    ...(update.gender ? { gender: update.gender } : {}),
+    ...(update.nationalId ? { national_id: update.nationalId } : {}),
+  }))
+}
+
 export default function BookingsPage() {
   const [selectedBooking, setSelectedBooking] =
     React.useState<BookingTableRow | null>(null)
@@ -59,6 +74,7 @@ export default function BookingsPage() {
   const [isLoading, setIsLoading] = React.useState(true)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
   const [apiError, setApiError] = React.useState<string | null>(null)
+  const [isNetworkError, setIsNetworkError] = React.useState(false)
 
   const overviewCards = React.useMemo(() => buildBookingOverviewCards(rows), [rows])
 
@@ -70,6 +86,7 @@ export default function BookingsPage() {
   const loadBookings = React.useCallback(async (bucket: CollectorBookingBucket) => {
     setIsRefreshing(true)
     setApiError(null)
+    setIsNetworkError(false)
 
     try {
       const response =
@@ -81,6 +98,7 @@ export default function BookingsPage() {
     } catch (error) {
       setRows([])
       setApiError(getApiErrorMessage(error))
+      setIsNetworkError(isNetworkApiError(error))
     } finally {
       setIsLoading(false)
       setIsRefreshing(false)
@@ -91,23 +109,36 @@ export default function BookingsPage() {
     void loadBookings(activeBucket)
   }, [activeBucket, loadBookings])
 
-  const handleSampleCollectionSubmit = React.useCallback(
-    async ({ booking, nationalId }: SubmitSampleCollectionInput) => {
+  const handleSavePatientUpdates = React.useCallback(
+    async ({ booking, updates }: SaveBookingPatientsInput) => {
       if (!booking.apiBookingId) {
         throw new Error("Unable to submit. Booking API id is missing.")
       }
 
-      const patientUpdates = (booking.patients || [])
-        .filter((patient) => patient.patientId)
-        .map((patient) => ({
-          current_patient_id: patient.patientId,
-          national_id: patient.nationalId?.trim() || nationalId,
-        }))
+      if (updates.length === 0) {
+        return
+      }
 
-      if (patientUpdates.length > 0) {
+      await updateCollectorBookingPatients({
+        bookingId: booking.apiBookingId,
+        updates: mapPatientUpdatesToApi(updates),
+      })
+
+      await loadBookings(activeBucket)
+    },
+    [activeBucket, loadBookings]
+  )
+
+  const handleSampleCollectionSubmit = React.useCallback(
+    async ({ booking, updates }: SubmitSampleCollectionInput) => {
+      if (!booking.apiBookingId) {
+        throw new Error("Unable to submit. Booking API id is missing.")
+      }
+
+      if (updates.length > 0) {
         await updateCollectorBookingPatients({
           bookingId: booking.apiBookingId,
-          updates: patientUpdates,
+          updates: mapPatientUpdatesToApi(updates),
         })
       }
 
@@ -181,32 +212,41 @@ export default function BookingsPage() {
             {isLoading ? (
               <p className="text-muted-foreground text-xs">Loading bookings...</p>
             ) : null}
-            {apiError ? (
-              <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                {apiError}
-              </p>
-            ) : null}
           </div>
           <OverviewCards items={overviewCards} />
-          <BookingsTable
-            rows={rows}
-            onRowSelect={handleRowSelect}
-            description="Live booking visibility for BoomHealth lab test operations"
-            emptyTitle={
-              activeBucket === "current"
-                ? "No current bookings"
-                : "No past bookings"
-            }
-            emptyDescription={
-              activeBucket === "current"
-                ? "No active bookings are assigned to this collector at the moment."
-                : "No completed or cancelled bookings are available yet."
-            }
-            onRefresh={() => {
-              void loadBookings(activeBucket)
-            }}
-            isRefreshing={isRefreshing}
-          />
+          {apiError && rows.length === 0 ? (
+            <div className="px-4 lg:px-6">
+              <PageErrorState
+                title={isNetworkError ? "Network Error" : "Unable to load bookings"}
+                description={apiError}
+                isNetworkError={isNetworkError}
+                onRetry={() => {
+                  void loadBookings(activeBucket)
+                }}
+                isRetrying={isRefreshing}
+              />
+            </div>
+          ) : (
+            <BookingsTable
+              rows={rows}
+              onRowSelect={handleRowSelect}
+              description="Live booking visibility for BoomHealth lab test operations"
+              emptyTitle={
+                activeBucket === "current"
+                  ? "No current bookings"
+                  : "No past bookings"
+              }
+              emptyDescription={
+                activeBucket === "current"
+                  ? "No active bookings are assigned to this collector at the moment."
+                  : "No completed or cancelled bookings are available yet."
+              }
+              onRefresh={() => {
+                void loadBookings(activeBucket)
+              }}
+              isRefreshing={isRefreshing}
+            />
+          )}
         </div>
         <MobileBottomNav />
       </SidebarInset>
@@ -214,6 +254,7 @@ export default function BookingsPage() {
         booking={selectedBooking}
         open={isBookingFormOpen}
         onOpenChange={setIsBookingFormOpen}
+        onSavePatientUpdates={handleSavePatientUpdates}
         onSubmitSampleCollection={handleSampleCollectionSubmit}
       />
     </SidebarProvider>

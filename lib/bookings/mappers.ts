@@ -57,7 +57,7 @@ function mapBookingStatus(status: string): BookingStatus {
     case "CANCELLED":
       return "Cancelled"
     default:
-      return "Pending"
+      return "Unknown"
   }
 }
 
@@ -103,6 +103,15 @@ export function mapCollectorBookingToTableRow(
     bookingId: item.order_id || `BK-${item.booking_id}`,
     apiBookingId: item.booking_id,
     orderId: item.order_id || null,
+    bookingStatusRaw: item.booking_status,
+    orderStatus: item.order_status ?? null,
+    resourceType: item.resource_type ?? null,
+    resourceId: item.resource_id ?? null,
+    startAt: item.start_at,
+    endAt: item.end_at ?? null,
+    createdAt: item.created_at ?? null,
+    paidAt: item.paid_at ?? null,
+    patientCount: item.patient_count ?? null,
     patientName:
       additionalPatients > 0
         ? `${primaryPatientName} +${additionalPatients}`
@@ -113,16 +122,13 @@ export function mapCollectorBookingToTableRow(
     status: mapBookingStatus(item.booking_status),
     amount: mapAmountAed(item),
     patients,
-    bookingStatusRaw: item.booking_status,
   }
 }
 
 export function buildBookingOverviewCards(rows: BookingTableRow[]): OverviewCardItem[] {
   const total = rows.length
   const pending = rows.filter((row) => row.status === "Pending").length
-  const collected = rows.filter(
-    (row) => row.status === "Collected" || row.status === "In Lab"
-  ).length
+  const active = rows.filter((row) => row.status === "Confirmed").length
   const completed = rows.filter((row) => row.status === "Result Ready").length
 
   return [
@@ -141,11 +147,11 @@ export function buildBookingOverviewCards(rows: BookingTableRow[]): OverviewCard
       trend: pending > 0 ? "up" : "down",
     },
     {
-      title: "Samples In Transit",
-      value: String(collected),
+      title: "Active Bookings",
+      value: String(active),
       change: "Live",
-      summary: "Collected or currently in lab workflow",
-      trend: "up",
+      summary: "Active bookings currently in execution window",
+      trend: active > 0 ? "up" : "down",
     },
     {
       title: "Results Delivered",

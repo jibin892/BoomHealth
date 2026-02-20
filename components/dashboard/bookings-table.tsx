@@ -47,20 +47,18 @@ const statusFilters: Array<"All" | BookingTableRow["status"]> = [
   "All",
   "Pending",
   "Confirmed",
-  "Collected",
-  "In Lab",
   "Result Ready",
   "Cancelled",
+  "Unknown",
 ]
 const pageSizeOptions = [5, 10, 20]
 
 const statusStyles: Record<BookingTableRow["status"], string> = {
   Pending: "text-amber-300 border-amber-400/40 bg-amber-500/10",
   Confirmed: "text-blue-300 border-blue-400/40 bg-blue-500/10",
-  Collected: "text-cyan-300 border-cyan-400/40 bg-cyan-500/10",
-  "In Lab": "text-violet-300 border-violet-400/40 bg-violet-500/10",
   "Result Ready": "text-emerald-300 border-emerald-400/40 bg-emerald-500/10",
   Cancelled: "text-rose-300 border-rose-400/40 bg-rose-500/10",
+  Unknown: "text-slate-300 border-slate-400/40 bg-slate-500/10",
 }
 
 export function BookingsTable({
