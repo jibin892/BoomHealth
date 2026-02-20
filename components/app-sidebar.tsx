@@ -71,7 +71,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   priority
                 />
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">BoomHealth</span>
+                  <span className="truncate font-medium">DarDoc</span>
                   <span className="truncate text-xs">Lab Bookings</span>
                 </div>
               </Link>

@@ -1,4 +1,4 @@
-const CACHE_NAME = "dardoc-pwa-v1"
+const CACHE_NAME = "dardoc-pwa-v2"
 const OFFLINE_URL = "/offline"
 const PRECACHE_URLS = [
   OFFLINE_URL,
@@ -41,6 +41,12 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
 
+  // Never cache Next.js build/runtime assets. Serving stale JS causes hydration mismatches.
+  if (url.pathname.startsWith("/_next/")) return
+
+  // Do not cache the service worker script itself.
+  if (url.pathname === "/sw.js") return
+
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request).catch(async () => {
@@ -55,18 +61,18 @@ self.addEventListener("fetch", (event) => {
   if (!isCacheableAsset(request)) return
 
   event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      const networkPromise = fetch(request)
-        .then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const responseClone = networkResponse.clone()
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone))
-          }
-          return networkResponse
-        })
-        .catch(() => cachedResponse)
-
-      return cachedResponse || networkPromise
-    })
+    fetch(request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const responseClone = networkResponse.clone()
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone))
+        }
+        return networkResponse
+      })
+      .catch(async () => {
+        const cachedResponse = await caches.match(request)
+        if (cachedResponse) return cachedResponse
+        return new Response("Offline", { status: 503, statusText: "Offline" })
+      })
   )
 })

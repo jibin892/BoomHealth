@@ -12,9 +12,17 @@ export function PwaServiceWorker() {
       return
     }
 
-    navigator.serviceWorker.register("/sw.js").catch((error) => {
-      console.error("Failed to register service worker:", error)
-    })
+    navigator.serviceWorker
+      .register("/sw.js?v=2", {
+        scope: "/",
+        updateViaCache: "none",
+      })
+      .then((registration) => {
+        void registration.update()
+      })
+      .catch((error) => {
+        console.error("Failed to register service worker:", error)
+      })
   }, [])
 
   return null

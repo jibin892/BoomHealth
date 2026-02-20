@@ -41,6 +41,13 @@ type ApiStatusFilter = (typeof apiStatusFilters)[number]
 type RowApiStatus = Exclude<ApiStatusFilter, "All"> | "CREATED" | "UNKNOWN"
 const pageSizeOptions = [5, 10, 20]
 
+const statusFilterLabel: Record<ApiStatusFilter, string> = {
+  All: "All",
+  ACTIVE: "Active",
+  FULFILLED: "Fulfilled",
+  CANCELLED: "Cancelled",
+}
+
 const statusStyles: Record<BookingTableRow["status"], string> = {
   Pending: "text-amber-300 border-amber-400/40 bg-amber-500/10",
   Confirmed: "text-blue-300 border-blue-400/40 bg-blue-500/10",
@@ -152,14 +159,64 @@ export function BookingsTable({
   const emptyStateDescription = hasFilters
     ? "Try a different search or reset the status filter."
     : emptyDescription
+  const clearFilters = React.useCallback(() => {
+    setSearch("")
+    setStatus("All")
+  }, [])
 
   return (
     <div className="px-4 pb-4 lg:px-6 lg:pb-6">
+      <div className="mb-3 space-y-3 md:hidden">
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search by booking ID, patient, or test"
+        />
+        {hasFilters ? (
+          <Button variant="outline" className="w-full" onClick={clearFilters}>
+            Clear Filters
+          </Button>
+        ) : null}
+
+        <div className="rounded-lg border p-1">
+          <div
+            role="tablist"
+            aria-label="Booking status filter"
+            className="grid grid-cols-2 gap-1"
+          >
+            {apiStatusFilters.map((option) => {
+              const isActive = status === option
+
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setStatus(option)}
+                  className={cn(
+                    "rounded-md px-3 py-2 text-center text-xs font-medium transition-colors",
+                    isActive
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "border border-border bg-background text-muted-foreground hover:bg-muted/50"
+                  )}
+                >
+                  {statusFilterLabel[option]}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <p className="text-muted-foreground text-xs">
+          Showing {filteredRows.length} of {rows.length} bookings
+        </p>
+      </div>
+
       <Card className="shadow-xs">
         <CardHeader>
           <CardTitle>{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
-          <div className="mt-3 flex flex-col gap-3">
+          <div className="mt-3 hidden flex-col gap-3 md:flex">
             <div className="flex flex-col gap-3 md:flex-row">
               <Input
                 value={search}
@@ -171,16 +228,13 @@ export function BookingsTable({
                 <Button
                   variant="outline"
                   className="w-full md:w-auto"
-                  onClick={() => {
-                    setSearch("")
-                    setStatus("All")
-                  }}
+                  onClick={clearFilters}
                 >
                   Clear Filters
                 </Button>
               ) : null}
             </div>
-            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
+            <div className="-mx-1 hidden gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 md:flex">
               {apiStatusFilters.map((option) => (
                 <Button
                   key={option}
@@ -212,13 +266,7 @@ export function BookingsTable({
               </p>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                 {hasFilters ? (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setSearch("")
-                      setStatus("All")
-                    }}
-                  >
+                  <Button variant="outline" onClick={clearFilters}>
                     Clear Filters
                   </Button>
                 ) : null}
