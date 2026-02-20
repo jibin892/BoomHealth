@@ -4,7 +4,10 @@ const isProtectedRoute = createRouteMatcher(["/dashboard(.*)"])
 
 export default clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req)) {
-    await auth.protect()
+    await auth.protect({
+      unauthenticatedUrl: "/sign-in",
+      unauthorizedUrl: "/sign-in",
+    })
   }
 })
 
