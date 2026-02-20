@@ -12,14 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { TablePagination } from "@/components/dashboard/table-pagination"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   Table,
   TableBody,
@@ -43,14 +37,8 @@ type BookingsTableProps = {
   isRefreshing?: boolean
 }
 
-const statusFilters: Array<"All" | BookingTableRow["status"]> = [
-  "All",
-  "Pending",
-  "Confirmed",
-  "Result Ready",
-  "Cancelled",
-  "Unknown",
-]
+const apiStatusFilters = ["All", "CREATED", "ACTIVE", "FULFILLED", "CANCELLED"] as const
+type ApiStatusFilter = (typeof apiStatusFilters)[number]
 const pageSizeOptions = [5, 10, 20]
 
 const statusStyles: Record<BookingTableRow["status"], string> = {
@@ -72,9 +60,7 @@ export function BookingsTable({
   isRefreshing = false,
 }: BookingsTableProps) {
   const [search, setSearch] = React.useState("")
-  const [status, setStatus] = React.useState<"All" | BookingTableRow["status"]>(
-    "All"
-  )
+  const [status, setStatus] = React.useState<ApiStatusFilter>("All")
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState<number>(pageSizeOptions[0])
 
@@ -82,7 +68,8 @@ export function BookingsTable({
     const query = search.trim().toLowerCase()
 
     return rows.filter((row) => {
-      const matchesStatus = status === "All" || row.status === status
+      const rowApiStatus = getRowApiStatus(row)
+      const matchesStatus = status === "All" || rowApiStatus === status
       if (!matchesStatus) return false
 
       if (!query) return true
@@ -150,7 +137,7 @@ export function BookingsTable({
               ) : null}
             </div>
             <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
-              {statusFilters.map((option) => (
+              {apiStatusFilters.map((option) => (
                 <Button
                   key={option}
                   variant={status === option ? "default" : "outline"}
@@ -307,66 +294,36 @@ export function BookingsTable({
               </div>
             </>
           )}
-          <div className="mt-4 border-t pt-4">
-            <p className="text-muted-foreground text-xs">
-              {filteredRows.length === 0
-                ? "Showing 0 bookings"
-                : `Showing ${rangeStart}-${rangeEnd} of ${filteredRows.length} filtered bookings`}
-            </p>
-
-            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="border-border/60 flex items-center justify-between gap-3 rounded-md border px-3 py-2 sm:rounded-none sm:border-0 sm:px-0 sm:py-0">
-                <label
-                  htmlFor="bookings-page-size"
-                  className="text-muted-foreground shrink-0 text-xs"
-                >
-                  Rows per page
-                </label>
-                <Select
-                  value={String(pageSize)}
-                  onValueChange={(value) => setPageSize(Number(value))}
-                  disabled={isEmpty}
-                >
-                  <SelectTrigger id="bookings-page-size" className="h-9 w-[88px]">
-                    <SelectValue placeholder={String(pageSizeOptions[0])} />
-                  </SelectTrigger>
-                  <SelectContent align="end">
-                    {pageSizeOptions.map((option) => (
-                      <SelectItem key={option} value={String(option)}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:flex sm:items-center">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 w-full sm:w-auto"
-                  onClick={() => setPage((currentPage) => currentPage - 1)}
-                  disabled={page <= 1 || isEmpty}
-                >
-                  Previous
-                </Button>
-                <span className="text-muted-foreground min-w-[88px] text-center text-xs sm:min-w-[96px]">
-                  Page {page} of {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 w-full sm:w-auto"
-                  onClick={() => setPage((currentPage) => currentPage + 1)}
-                  disabled={page >= totalPages || isEmpty}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          </div>
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            pageSizeOptions={pageSizeOptions}
+            filteredCount={filteredRows.length}
+            rangeStart={rangeStart}
+            rangeEnd={rangeEnd}
+            isEmpty={isEmpty}
+            pageSizeId="bookings-page-size"
+            entityLabel="bookings"
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
         </CardContent>
       </Card>
     </div>
   )
+}
+
+function getRowApiStatus(row: BookingTableRow): ApiStatusFilter | "UNKNOWN" {
+  if (row.bookingStatusRaw === "CREATED") return "CREATED"
+  if (row.bookingStatusRaw === "ACTIVE") return "ACTIVE"
+  if (row.bookingStatusRaw === "FULFILLED") return "FULFILLED"
+  if (row.bookingStatusRaw === "CANCELLED") return "CANCELLED"
+
+  if (row.status === "Pending") return "CREATED"
+  if (row.status === "Confirmed") return "ACTIVE"
+  if (row.status === "Result Ready") return "FULFILLED"
+  if (row.status === "Cancelled") return "CANCELLED"
+
+  return "UNKNOWN"
 }

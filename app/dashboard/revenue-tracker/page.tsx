@@ -1,4 +1,9 @@
+"use client"
+
 import { AppSidebar } from "@/components/app-sidebar"
+import { MobileBottomNav } from "@/components/mobile-bottom-nav"
+import { OverviewCards } from "@/components/dashboard/overview-cards"
+import { RevenueTable } from "@/components/dashboard/revenue-table"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -6,40 +11,56 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
-import { MobileBottomNav } from "@/components/mobile-bottom-nav"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { formatAedAmount } from "@/lib/currency"
 
 import { revenueRows } from "./data"
 
-const formatCurrency = (value: number) =>
-  formatAedAmount(value.toLocaleString("en-US"))
+function formatCurrency(value: number) {
+  return formatAedAmount(value.toLocaleString("en-US"))
+}
 
 export default function RevenueTrackerPage() {
   const totalBookings = revenueRows.reduce((sum, row) => sum + row.bookings, 0)
   const totalCollected = revenueRows.reduce((sum, row) => sum + row.collected, 0)
   const totalPending = revenueRows.reduce((sum, row) => sum + row.pending, 0)
   const totalNet = revenueRows.reduce((sum, row) => sum + row.net, 0)
+
+  const overviewItems = [
+    {
+      title: "Total Bookings",
+      value: String(totalBookings),
+      change: "Live",
+      summary: "Bookings across monthly revenue records",
+      trend: "up" as const,
+    },
+    {
+      title: "Collected Revenue",
+      value: formatCurrency(totalCollected),
+      change: "Live",
+      summary: "Total successfully collected amount",
+      trend: totalCollected > 0 ? ("up" as const) : ("down" as const),
+    },
+    {
+      title: "Pending Receivables",
+      value: formatCurrency(totalPending),
+      change: "Live",
+      summary: "Outstanding receivables pending settlement",
+      trend: totalPending > 0 ? ("up" as const) : ("down" as const),
+    },
+    {
+      title: "Net Revenue",
+      value: formatCurrency(totalNet),
+      change: "Live",
+      summary: "Net revenue after pending deductions",
+      trend: totalNet > 0 ? ("up" as const) : ("down" as const),
+    },
+  ]
 
   return (
     <SidebarProvider>
@@ -65,107 +86,12 @@ export default function RevenueTrackerPage() {
             </Breadcrumb>
           </div>
         </header>
-
-        <div className="flex flex-1 flex-col gap-4 px-4 pb-20 lg:px-6 lg:pb-6">
-          <div className="grid grid-cols-1 gap-4 pt-1 md:grid-cols-2 xl:grid-cols-4">
-            <Card className="shadow-xs">
-              <CardHeader className="pb-2">
-                <CardDescription>Total Bookings</CardDescription>
-                <CardTitle className="text-xl sm:text-2xl">{totalBookings}</CardTitle>
-              </CardHeader>
-            </Card>
-            <Card className="shadow-xs">
-              <CardHeader className="pb-2">
-                <CardDescription>Collected Revenue</CardDescription>
-                <CardTitle className="text-xl sm:text-2xl">
-                  {formatCurrency(totalCollected)}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card className="shadow-xs">
-              <CardHeader className="pb-2">
-                <CardDescription>Pending Receivables</CardDescription>
-                <CardTitle className="text-xl sm:text-2xl">
-                  {formatCurrency(totalPending)}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card className="shadow-xs">
-              <CardHeader className="pb-2">
-                <CardDescription>Net Revenue</CardDescription>
-                <CardTitle className="text-xl sm:text-2xl">
-                  {formatCurrency(totalNet)}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-          </div>
-
-          <Card className="shadow-xs">
-            <CardHeader>
-              <CardTitle>Monthly Revenue</CardTitle>
-              <CardDescription>
-                Booking and collection summary for the current cycle
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3 md:hidden">
-                {revenueRows.map((row) => (
-                  <div key={row.month} className="rounded-lg border p-3">
-                    <p className="text-sm font-semibold">{row.month}</p>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                      <p className="text-muted-foreground">Bookings</p>
-                      <p className="text-right tabular-nums">{row.bookings}</p>
-                      <p className="text-muted-foreground">Collected</p>
-                      <p className="text-right tabular-nums">
-                        {formatCurrency(row.collected)}
-                      </p>
-                      <p className="text-muted-foreground">Pending</p>
-                      <p className="text-right tabular-nums">
-                        {formatCurrency(row.pending)}
-                      </p>
-                      <p className="text-muted-foreground font-medium">Net</p>
-                      <p className="text-right font-medium tabular-nums">
-                        {formatCurrency(row.net)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="hidden md:block">
-                <Table className="min-w-[700px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Month</TableHead>
-                      <TableHead className="text-right">Bookings</TableHead>
-                      <TableHead className="text-right">Collected</TableHead>
-                      <TableHead className="text-right">Pending</TableHead>
-                      <TableHead className="text-right">Net</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {revenueRows.map((row) => (
-                      <TableRow key={row.month}>
-                        <TableCell className="font-medium">{row.month}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {row.bookings}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatCurrency(row.collected)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatCurrency(row.pending)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatCurrency(row.net)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="flex flex-1 flex-col gap-4 pb-20 md:pb-6">
+          <OverviewCards items={overviewItems} mobileLabel="Revenue Overview" />
+          <RevenueTable
+            rows={revenueRows}
+            description="Monthly booking and payment collection performance"
+          />
         </div>
         <MobileBottomNav />
       </SidebarInset>

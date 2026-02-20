@@ -1,11 +1,11 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import {
-  CalendarClock,
-  CircleDollarSign,
   ClipboardList,
   FlaskConical,
+  MapPin,
   UserRound,
 } from "lucide-react"
 
@@ -61,6 +61,8 @@ export type SubmitSampleCollectionInput = SaveBookingPatientsInput & {
   idDocumentFile: File
 }
 
+type IdDocumentType = "passport" | "eid"
+
 type BookingFormDialogProps = {
   booking: BookingTableRow | null
   open: boolean
@@ -81,12 +83,13 @@ type BookingPatientForm = {
   testsCount: number | null
 }
 
+type DialogSection = "booking" | "patients" | "location" | "sample"
+
 const sectionItems = [
-  { name: "Booking Details", icon: ClipboardList },
-  { name: "Patient Snapshot", icon: UserRound },
-  { name: "Sample Collection", icon: FlaskConical },
-  { name: "Schedule", icon: CalendarClock },
-  { name: "Billing", icon: CircleDollarSign },
+  { key: "booking" as const, name: "Booking Details", icon: ClipboardList },
+  { key: "patients" as const, name: "Patient Details", icon: UserRound },
+  { key: "location" as const, name: "Location Details", icon: MapPin },
+  { key: "sample" as const, name: "Sample Collection", icon: FlaskConical },
 ]
 
 function mapPatientsToForms(patients: BookingPatient[]): BookingPatientForm[] {
@@ -191,6 +194,26 @@ function getSampleSubmissionError(error: unknown) {
   return message
 }
 
+function useFilePreview(file: File | null) {
+  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!file) {
+      setPreviewUrl(null)
+      return
+    }
+
+    const objectUrl = URL.createObjectURL(file)
+    setPreviewUrl(objectUrl)
+
+    return () => {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }, [file])
+
+  return previewUrl
+}
+
 export function BookingFormDialog({
   booking,
   open,
@@ -198,10 +221,18 @@ export function BookingFormDialog({
   onSavePatientUpdates,
   onSubmitSampleCollection,
 }: BookingFormDialogProps) {
+  const [activeSection, setActiveSection] = React.useState<DialogSection>("booking")
   const [patientForms, setPatientForms] = React.useState<BookingPatientForm[]>([])
   const [showSampleCollection, setShowSampleCollection] = React.useState(false)
   const [isCaptureDevice, setIsCaptureDevice] = React.useState(false)
-  const [idDocumentFile, setIdDocumentFile] = React.useState<File | null>(null)
+  const [selectedDocumentType, setSelectedDocumentType] =
+    React.useState<IdDocumentType>("passport")
+  const [passportFrontFile, setPassportFrontFile] = React.useState<File | null>(null)
+  const [eidFrontFile, setEidFrontFile] = React.useState<File | null>(null)
+  const [eidBackFile, setEidBackFile] = React.useState<File | null>(null)
+  const [hasCameraPermission, setHasCameraPermission] = React.useState(false)
+  const [isRequestingCameraPermission, setIsRequestingCameraPermission] =
+    React.useState(false)
   const [isSavingPatients, setIsSavingPatients] = React.useState(false)
   const [isSubmittingSample, setIsSubmittingSample] = React.useState(false)
   const [saveSuccessMessage, setSaveSuccessMessage] = React.useState<string | null>(
@@ -215,16 +246,29 @@ export function BookingFormDialog({
     string | null
   >(null)
 
-  const desktopUploadInputRef = React.useRef<HTMLInputElement>(null)
-  const captureInputRef = React.useRef<HTMLInputElement>(null)
+  const passportUploadInputRef = React.useRef<HTMLInputElement>(null)
+  const eidFrontUploadInputRef = React.useRef<HTMLInputElement>(null)
+  const eidBackUploadInputRef = React.useRef<HTMLInputElement>(null)
+  const passportCaptureInputRef = React.useRef<HTMLInputElement>(null)
+  const eidFrontCaptureInputRef = React.useRef<HTMLInputElement>(null)
+  const eidBackCaptureInputRef = React.useRef<HTMLInputElement>(null)
 
   const sourcePatients = React.useMemo(() => getSourcePatients(booking), [booking])
+  const passportFrontPreviewUrl = useFilePreview(passportFrontFile)
+  const eidFrontPreviewUrl = useFilePreview(eidFrontFile)
+  const eidBackPreviewUrl = useFilePreview(eidBackFile)
 
   React.useEffect(() => {
     if (open) {
+      setActiveSection("booking")
       setPatientForms(mapPatientsToForms(sourcePatients))
       setShowSampleCollection(false)
-      setIdDocumentFile(null)
+      setSelectedDocumentType("passport")
+      setPassportFrontFile(null)
+      setEidFrontFile(null)
+      setEidBackFile(null)
+      setHasCameraPermission(false)
+      setIsRequestingCameraPermission(false)
       setIsSavingPatients(false)
       setIsSubmittingSample(false)
       setSaveSuccessMessage(null)
@@ -261,6 +305,70 @@ export function BookingFormDialog({
   )
 
   const hasAllNationalIds = missingNationalIdPatientIds.length === 0
+
+  const isSampleDocumentReady = React.useMemo(() => {
+    if (selectedDocumentType === "passport") {
+      return Boolean(passportFrontFile)
+    }
+
+    return Boolean(eidFrontFile && eidBackFile)
+  }, [eidBackFile, eidFrontFile, passportFrontFile, selectedDocumentType])
+
+  const submissionDocumentFile = React.useMemo(() => {
+    return selectedDocumentType === "passport" ? passportFrontFile : eidFrontFile
+  }, [eidFrontFile, passportFrontFile, selectedDocumentType])
+
+  const requestCameraPermission = React.useCallback(async () => {
+    if (!isCaptureDevice) {
+      return true
+    }
+
+    if (hasCameraPermission) {
+      return true
+    }
+
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices ||
+      !navigator.mediaDevices.getUserMedia
+    ) {
+      setSampleErrorMessage(
+        "Camera capture is not supported on this device. Use a desktop/laptop upload."
+      )
+      return false
+    }
+
+    setIsRequestingCameraPermission(true)
+    setSampleErrorMessage(null)
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+      })
+      stream.getTracks().forEach((track) => track.stop())
+      setHasCameraPermission(true)
+      return true
+    } catch {
+      setHasCameraPermission(false)
+      setSampleErrorMessage(
+        "Camera permission is required. Please allow camera access and try again."
+      )
+      return false
+    } finally {
+      setIsRequestingCameraPermission(false)
+    }
+  }, [hasCameraPermission, isCaptureDevice])
+
+  const openCaptureInput = React.useCallback(
+    async (ref: React.MutableRefObject<HTMLInputElement | null>) => {
+      const hasPermission = await requestCameraPermission()
+      if (!hasPermission) {
+        return
+      }
+      ref.current?.click()
+    },
+    [requestCameraPermission]
+  )
 
   const handlePatientFieldChange = React.useCallback(
     (
@@ -325,9 +433,21 @@ export function BookingFormDialog({
       return
     }
 
-    if (!idDocumentFile) {
+    if (!isSampleDocumentReady || !submissionDocumentFile) {
       setSampleSuccessMessage(null)
-      setSampleErrorMessage("Attach EID/Passport image before submitting.")
+      if (selectedDocumentType === "passport") {
+        setSampleErrorMessage(
+          isCaptureDevice
+            ? "Capture passport front side before submitting."
+            : "Upload passport front side before submitting."
+        )
+      } else {
+        setSampleErrorMessage(
+          isCaptureDevice
+            ? "Capture EID front and back side before submitting."
+            : "Upload EID front and back side before submitting."
+        )
+      }
       return
     }
 
@@ -355,7 +475,7 @@ export function BookingFormDialog({
       await onSubmitSampleCollection({
         booking,
         updates: patientUpdates,
-        idDocumentFile,
+        idDocumentFile: submissionDocumentFile,
       })
 
       setSampleSuccessMessage("Sample collection submitted successfully.")
@@ -367,10 +487,13 @@ export function BookingFormDialog({
   }, [
     booking,
     hasAllNationalIds,
-    idDocumentFile,
+    isCaptureDevice,
+    isSampleDocumentReady,
     missingNationalIdPatientIds,
     onSubmitSampleCollection,
     patientUpdates,
+    selectedDocumentType,
+    submissionDocumentFile,
   ])
 
   const amount = formatAedAmount(booking?.amount ?? 0)
@@ -388,11 +511,11 @@ export function BookingFormDialog({
               <SidebarGroup>
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    {sectionItems.map((item, index) => (
+                    {sectionItems.map((item) => (
                       <SidebarMenuItem key={item.name}>
                         <SidebarMenuButton
-                          isActive={index === 0}
-                          className="pointer-events-none"
+                          isActive={activeSection === item.key}
+                          onClick={() => setActiveSection(item.key)}
                         >
                           <item.icon />
                           <span>{item.name}</span>
@@ -422,8 +545,27 @@ export function BookingFormDialog({
               </div>
             </header>
 
+            <div className="border-b px-3 py-2 md:hidden">
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                {sectionItems.map((item) => (
+                  <Button
+                    key={item.key}
+                    type="button"
+                    size="sm"
+                    variant={activeSection === item.key ? "default" : "outline"}
+                    className="shrink-0"
+                    onClick={() => setActiveSection(item.key)}
+                  >
+                    <item.icon className="mr-1 size-4" />
+                    {item.name}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
             <div className="flex-1 space-y-5 overflow-y-auto p-4 md:p-6">
-              <section className="space-y-3 rounded-lg border p-3 md:p-4">
+              {activeSection === "booking" ? (
+                <section className="space-y-3 rounded-lg border p-3 md:p-4">
                 <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                   <div className="space-y-1">
                     <p className="text-muted-foreground text-xs">Booking ID</p>
@@ -462,9 +604,11 @@ export function BookingFormDialog({
                     <p className="text-sm font-medium tabular-nums">{amount}</p>
                   </div>
                 </div>
-              </section>
+                </section>
+              ) : null}
 
-              <section className="space-y-3 rounded-lg border p-3 md:p-4">
+              {activeSection === "patients" ? (
+                <section className="space-y-3 rounded-lg border p-3 md:p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-medium">Patient Details</p>
@@ -602,9 +746,48 @@ export function BookingFormDialog({
                     {saveSuccessMessage}
                   </p>
                 ) : null}
-              </section>
+                </section>
+              ) : null}
 
-              <section className="space-y-3 rounded-lg border p-3 md:p-4">
+              {activeSection === "location" ? (
+                <section className="space-y-3 rounded-lg border p-3 md:p-4">
+                  <div>
+                    <p className="text-sm font-medium">Location Details</p>
+                    <p className="text-muted-foreground text-xs">
+                      Booking assignment and visit location information.
+                    </p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                    <div className="space-y-1">
+                      <p className="text-muted-foreground text-xs">Resource Type</p>
+                      <p className="text-sm font-medium">{booking?.resourceType || "-"}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-muted-foreground text-xs">Resource ID</p>
+                      <p className="text-sm font-medium">{booking?.resourceId || "-"}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-muted-foreground text-xs">Visit Date</p>
+                      <p className="text-sm font-medium">{booking?.date || "-"}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-muted-foreground text-xs">Visit Slot</p>
+                      <p className="text-sm font-medium">{booking?.slot || "-"}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-muted-foreground text-xs">Start Time</p>
+                      <p className="text-sm font-medium">{formatDateTime(booking?.startAt)}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-muted-foreground text-xs">End Time</p>
+                      <p className="text-sm font-medium">{formatDateTime(booking?.endAt)}</p>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
+
+              {activeSection === "sample" ? (
+                <section className="space-y-3 rounded-lg border p-3 md:p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-medium">Sample Collection</p>
@@ -625,61 +808,288 @@ export function BookingFormDialog({
                   <div className="space-y-3 border-t pt-3">
                     <p className="text-muted-foreground text-xs">
                       {isCaptureDevice
-                        ? "Capture EID/Passport image (Mobile/Tablet)"
-                        : "Upload EID/Passport image (Desktop/Laptop)"}
+                        ? "Select document type and capture required sides (Mobile/Tablet)"
+                        : "Select document type and upload required sides (Desktop/Laptop)"}
                     </p>
 
                     <input
-                      ref={desktopUploadInputRef}
+                      ref={passportUploadInputRef}
                       type="file"
                       accept="image/*"
                       className="hidden"
                       onChange={(event) => {
                         const file = event.target.files?.[0] ?? null
-                        setIdDocumentFile(file)
+                        setPassportFrontFile(file)
                         setSampleErrorMessage(null)
                         setSampleSuccessMessage(null)
                       }}
                     />
 
                     <input
-                      ref={captureInputRef}
+                      ref={eidFrontUploadInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null
+                        setEidFrontFile(file)
+                        setSampleErrorMessage(null)
+                        setSampleSuccessMessage(null)
+                      }}
+                    />
+
+                    <input
+                      ref={eidBackUploadInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null
+                        setEidBackFile(file)
+                        setSampleErrorMessage(null)
+                        setSampleSuccessMessage(null)
+                      }}
+                    />
+
+                    <input
+                      ref={passportCaptureInputRef}
                       type="file"
                       accept="image/*"
                       capture="environment"
                       className="hidden"
                       onChange={(event) => {
                         const file = event.target.files?.[0] ?? null
-                        setIdDocumentFile(file)
+                        setPassportFrontFile(file)
                         setSampleErrorMessage(null)
                         setSampleSuccessMessage(null)
                       }}
                     />
 
-                    {isCaptureDevice ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full sm:w-auto"
-                        onClick={() => captureInputRef.current?.click()}
-                      >
-                        Capture EID / Passport
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full sm:w-auto"
-                        onClick={() => desktopUploadInputRef.current?.click()}
-                      >
-                        Upload EID / Passport
-                      </Button>
-                    )}
+                    <input
+                      ref={eidFrontCaptureInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null
+                        setEidFrontFile(file)
+                        setSampleErrorMessage(null)
+                        setSampleSuccessMessage(null)
+                      }}
+                    />
 
-                    {idDocumentFile ? (
-                      <p className="text-muted-foreground text-xs">
-                        Selected file: {idDocumentFile.name}
-                      </p>
+                    <input
+                      ref={eidBackCaptureInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null
+                        setEidBackFile(file)
+                        setSampleErrorMessage(null)
+                        setSampleSuccessMessage(null)
+                      }}
+                    />
+
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant={
+                            selectedDocumentType === "passport" ? "default" : "outline"
+                          }
+                          className="w-full"
+                          onClick={() => {
+                            setSelectedDocumentType("passport")
+                            setSampleErrorMessage(null)
+                            setSampleSuccessMessage(null)
+                          }}
+                        >
+                          Passport
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={selectedDocumentType === "eid" ? "default" : "outline"}
+                          className="w-full"
+                          onClick={() => {
+                            setSelectedDocumentType("eid")
+                            setSampleErrorMessage(null)
+                            setSampleSuccessMessage(null)
+                          }}
+                        >
+                          EID
+                        </Button>
+                      </div>
+
+                      {isCaptureDevice ? (
+                        <>
+                          {!hasCameraPermission ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="w-full sm:w-auto"
+                              disabled={isRequestingCameraPermission}
+                              onClick={() => {
+                                void requestCameraPermission()
+                              }}
+                            >
+                              {isRequestingCameraPermission
+                                ? "Requesting Camera Permission..."
+                                : "Allow Camera Permission"}
+                            </Button>
+                          ) : (
+                            <p className="text-muted-foreground text-xs">
+                              Camera permission granted.
+                            </p>
+                          )}
+
+                          {selectedDocumentType === "passport" ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="w-full sm:w-auto"
+                              disabled={isRequestingCameraPermission}
+                              onClick={() => {
+                                void openCaptureInput(passportCaptureInputRef)
+                              }}
+                            >
+                              Capture Passport Front
+                            </Button>
+                          ) : (
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="w-full"
+                                disabled={isRequestingCameraPermission}
+                                onClick={() => {
+                                  void openCaptureInput(eidFrontCaptureInputRef)
+                                }}
+                              >
+                                Capture EID Front
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="w-full"
+                                disabled={isRequestingCameraPermission}
+                                onClick={() => {
+                                  void openCaptureInput(eidBackCaptureInputRef)
+                                }}
+                              >
+                                Capture EID Back
+                              </Button>
+                            </div>
+                          )}
+                        </>
+                      ) : selectedDocumentType === "passport" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full sm:w-auto"
+                          onClick={() => passportUploadInputRef.current?.click()}
+                        >
+                          Upload Passport Front
+                        </Button>
+                      ) : (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => eidFrontUploadInputRef.current?.click()}
+                          >
+                            Upload EID Front
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => eidBackUploadInputRef.current?.click()}
+                          >
+                            Upload EID Back
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    {selectedDocumentType === "passport" ? (
+                      <div className="space-y-2">
+                        <p className="text-muted-foreground text-xs">
+                          Passport front:{" "}
+                          {passportFrontFile?.name ||
+                            (isCaptureDevice ? "Not captured" : "Not uploaded")}
+                        </p>
+                        {passportFrontPreviewUrl ? (
+                          <div className="space-y-1">
+                            <p className="text-muted-foreground text-[11px]">
+                              Passport front preview
+                            </p>
+                            <div className="relative h-44 w-full overflow-hidden rounded-md border bg-black/5">
+                              <Image
+                                src={passportFrontPreviewUrl}
+                                alt="Passport front preview"
+                                fill
+                                unoptimized
+                                className="object-contain"
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {selectedDocumentType === "eid" ? (
+                      <div className="space-y-2">
+                        <p className="text-muted-foreground text-xs">
+                          EID front:{" "}
+                          {eidFrontFile?.name ||
+                            (isCaptureDevice ? "Not captured" : "Not uploaded")}
+                        </p>
+                        <p className="text-muted-foreground text-xs">
+                          EID back:{" "}
+                          {eidBackFile?.name ||
+                            (isCaptureDevice ? "Not captured" : "Not uploaded")}
+                        </p>
+                        {eidFrontPreviewUrl || eidBackPreviewUrl ? (
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {eidFrontPreviewUrl ? (
+                              <div className="space-y-1">
+                                <p className="text-muted-foreground text-[11px]">
+                                  EID front preview
+                                </p>
+                                <div className="relative h-40 w-full overflow-hidden rounded-md border bg-black/5">
+                                  <Image
+                                    src={eidFrontPreviewUrl}
+                                    alt="EID front preview"
+                                    fill
+                                    unoptimized
+                                    className="object-contain"
+                                  />
+                                </div>
+                              </div>
+                            ) : null}
+                            {eidBackPreviewUrl ? (
+                              <div className="space-y-1">
+                                <p className="text-muted-foreground text-[11px]">
+                                  EID back preview
+                                </p>
+                                <div className="relative h-40 w-full overflow-hidden rounded-md border bg-black/5">
+                                  <Image
+                                    src={eidBackPreviewUrl}
+                                    alt="EID back preview"
+                                    fill
+                                    unoptimized
+                                    className="object-contain"
+                                  />
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
                     ) : null}
 
                     {!hasAllNationalIds ? (
@@ -691,7 +1101,9 @@ export function BookingFormDialog({
                     <Button
                       type="button"
                       className="w-full sm:w-auto"
-                      disabled={!idDocumentFile || isSubmittingSample || !hasAllNationalIds}
+                      disabled={
+                        !isSampleDocumentReady || isSubmittingSample || !hasAllNationalIds
+                      }
                       onClick={() => {
                         void handleSampleSubmit()
                       }}
@@ -712,7 +1124,8 @@ export function BookingFormDialog({
                     ) : null}
                   </div>
                 ) : null}
-              </section>
+                </section>
+              ) : null}
 
               <div className="flex justify-end border-t pt-4">
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

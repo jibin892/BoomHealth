@@ -29,6 +29,7 @@ export type OverviewCardItem = {
 
 type OverviewCardsProps = {
   items: OverviewCardItem[]
+  mobileLabel?: string
 }
 
 function OverviewCard({ item }: { item: OverviewCardItem }) {
@@ -57,7 +58,10 @@ function OverviewCard({ item }: { item: OverviewCardItem }) {
   )
 }
 
-export function OverviewCards({ items }: OverviewCardsProps) {
+export function OverviewCards({
+  items,
+  mobileLabel = "Booking Overview",
+}: OverviewCardsProps) {
   const [isMobileExpanded, setIsMobileExpanded] = React.useState(false)
 
   return (
@@ -73,9 +77,9 @@ export function OverviewCards({ items }: OverviewCardsProps) {
             variant="outline"
             className="w-full justify-between"
             aria-expanded={isMobileExpanded}
-            aria-label="Toggle booking overview cards"
+            aria-label={`Toggle ${mobileLabel.toLowerCase()} cards`}
           >
-            Booking Overview
+            {mobileLabel}
             <ChevronDown
               className={cn(
                 "size-4 transition-transform",

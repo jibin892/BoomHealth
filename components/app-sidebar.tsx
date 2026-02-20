@@ -7,11 +7,9 @@ import { useUser } from "@clerk/nextjs"
 import {
   BarChart3,
   CalendarCheck2,
-  Settings2,
 } from "lucide-react"
 
 import { NavMain } from '@/components/nav-main'
-import { NavSecondary } from '@/components/nav-secondary'
 import { NavUser } from '@/components/nav-user'
 import {
   Sidebar,
@@ -34,13 +32,6 @@ const data = {
       title: "Revenue Tracker",
       url: "/dashboard/revenue-tracker",
       icon: BarChart3,
-    },
-  ],
-  navSecondary: [
-    {
-      title: "Settings",
-      url: "/dashboard/settings",
-      icon: Settings2,
     },
   ],
 }
@@ -90,7 +81,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={sidebarUser} />

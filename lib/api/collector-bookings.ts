@@ -109,8 +109,8 @@ function buildFallbackCurrentBookingsResponse(
   collectorPartyId: string,
   query: CollectorBookingsQuery = {}
 ): CollectorBookingsResponse {
-  const seedSize = 120
-  const generatedItems = Array.from({ length: seedSize }, (_, index) =>
+  const fallbackCount = 5
+  const generatedItems = Array.from({ length: fallbackCount }, (_, index) =>
     createFallbackBookingItem(index)
   )
 
@@ -132,7 +132,7 @@ function buildFallbackCurrentBookingsResponse(
       )
     : filteredByStatus
 
-  const safeLimit = clampLimit(query.limit) ?? 30
+  const safeLimit = Math.min(clampLimit(query.limit) ?? fallbackCount, fallbackCount)
   const items = filteredItems.slice(0, safeLimit)
 
   return {
@@ -166,9 +166,17 @@ async function fetchBookings(
   } catch (error) {
     const apiError = toApiRequestError(error)
 
-    if (bucket === "current" && apiError.status === 404) {
+    if (
+      bucket === "current" &&
+      (apiError.status === 404 || apiError.isNetworkError)
+    ) {
       console.warn(
-        "[collector-bookings] current bookings endpoint returned 404; using fallback dummy data for testing."
+        "[collector-bookings] current bookings request failed; using fallback dummy data for testing.",
+        {
+          status: apiError.status,
+          code: apiError.code,
+          message: apiError.message,
+        }
       )
       return buildFallbackCurrentBookingsResponse(collectorPartyId, args)
     }

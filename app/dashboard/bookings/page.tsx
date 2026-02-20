@@ -85,8 +85,13 @@ export default function BookingsPage() {
 
   const loadBookings = React.useCallback(async (bucket: CollectorBookingBucket) => {
     setIsRefreshing(true)
-    setApiError(null)
-    setIsNetworkError(false)
+
+    // Keep error state visible while retrying from an empty/error screen,
+    // so the layout does not flash to "Recent Bookings" and back.
+    if (rows.length > 0) {
+      setApiError(null)
+      setIsNetworkError(false)
+    }
 
     try {
       const response =
@@ -95,6 +100,8 @@ export default function BookingsPage() {
           : await getPastCollectorBookings({ limit: 200 })
 
       setRows(response.items.map(mapCollectorBookingToTableRow))
+      setApiError(null)
+      setIsNetworkError(false)
     } catch (error) {
       setRows([])
       setApiError(getApiErrorMessage(error))
@@ -103,7 +110,7 @@ export default function BookingsPage() {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [])
+  }, [rows.length])
 
   React.useEffect(() => {
     void loadBookings(activeBucket)

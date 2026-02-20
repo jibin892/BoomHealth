@@ -1,4 +1,5 @@
-export const AED_SYMBOL = "Ð"
+export const AED_SYMBOL = "AED"
+const LEGACY_AED_SYMBOL = "Ð"
 
 export function formatAedAmount(amount: string | number) {
   if (typeof amount === "number") {
@@ -8,6 +9,7 @@ export function formatAedAmount(amount: string | number) {
   const normalized = amount
     .replaceAll("AED", "")
     .replaceAll("د.إ", "")
+    .replaceAll(LEGACY_AED_SYMBOL, "")
     .replaceAll(AED_SYMBOL, "")
     .trim()
 
