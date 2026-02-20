@@ -9,6 +9,7 @@ import {
   type SaveBookingPatientsInput,
   type SubmitSampleCollectionInput,
 } from "@/components/dashboard/booking-form-dialog"
+import { BookingsPageSkeleton } from "@/components/dashboard/bookings-page-skeleton"
 import { BookingsTable } from "@/components/dashboard/bookings-table"
 import { OverviewCards } from "@/components/dashboard/overview-cards"
 import { MobileBottomNav } from "@/components/mobile-bottom-nav"
@@ -75,6 +76,7 @@ export default function BookingsPage() {
   const [isRefreshing, setIsRefreshing] = React.useState(false)
   const [apiError, setApiError] = React.useState<string | null>(null)
   const [isNetworkError, setIsNetworkError] = React.useState(false)
+  const isInitialLoading = isLoading && rows.length === 0
 
   const overviewCards = React.useMemo(() => buildBookingOverviewCards(rows), [rows])
 
@@ -216,12 +218,13 @@ export default function BookingsPage() {
                 Refresh
               </Button>
             </div>
-            {isLoading ? (
+            {isInitialLoading ? (
               <p className="text-muted-foreground text-xs">Loading bookings...</p>
             ) : null}
           </div>
-          <OverviewCards items={overviewCards} />
-          {apiError && rows.length === 0 ? (
+          {isInitialLoading ? (
+            <BookingsPageSkeleton />
+          ) : apiError && rows.length === 0 ? (
             <div className="px-4 lg:px-6">
               <PageErrorState
                 title={isNetworkError ? "Network Error" : "Unable to load bookings"}
@@ -234,25 +237,28 @@ export default function BookingsPage() {
               />
             </div>
           ) : (
-            <BookingsTable
-              rows={rows}
-              onRowSelect={handleRowSelect}
-              description="Live booking visibility for BoomHealth lab test operations"
-              emptyTitle={
-                activeBucket === "current"
-                  ? "No current bookings"
-                  : "No past bookings"
-              }
-              emptyDescription={
-                activeBucket === "current"
-                  ? "No active bookings are assigned to this collector at the moment."
-                  : "No completed or cancelled bookings are available yet."
-              }
-              onRefresh={() => {
-                void loadBookings(activeBucket)
-              }}
-              isRefreshing={isRefreshing}
-            />
+            <>
+              <OverviewCards items={overviewCards} />
+              <BookingsTable
+                rows={rows}
+                onRowSelect={handleRowSelect}
+                description="Live booking visibility for BoomHealth lab test operations"
+                emptyTitle={
+                  activeBucket === "current"
+                    ? "No current bookings"
+                    : "No past bookings"
+                }
+                emptyDescription={
+                  activeBucket === "current"
+                    ? "No active bookings are assigned to this collector at the moment."
+                    : "No completed or cancelled bookings are available yet."
+                }
+                onRefresh={() => {
+                  void loadBookings(activeBucket)
+                }}
+                isRefreshing={isRefreshing}
+              />
+            </>
           )}
         </div>
         <MobileBottomNav />

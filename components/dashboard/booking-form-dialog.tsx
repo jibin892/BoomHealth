@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import Image from "next/image"
 import {
   ClipboardList,
   ExternalLink,
@@ -259,6 +258,17 @@ function useFilePreview(file: File | null) {
   }, [file])
 
   return previewUrl
+}
+
+function PreviewImage({ src, label }: { src: string; label: string }) {
+  return (
+    <div
+      role="img"
+      aria-label={label}
+      className="h-full w-full bg-contain bg-center bg-no-repeat"
+      style={{ backgroundImage: `url("${src}")` }}
+    />
+  )
 }
 
 export function BookingFormDialog({
@@ -587,7 +597,7 @@ export function BookingFormDialog({
         <DialogDescription className="sr-only">
           Review booking details, update patient information, and submit sample collection.
         </DialogDescription>
-        <SidebarProvider className="items-start">
+        <SidebarProvider className="h-full items-start">
           <Sidebar collapsible="none" className="hidden border-r md:flex">
             <SidebarContent>
               <SidebarGroup>
@@ -610,7 +620,7 @@ export function BookingFormDialog({
             </SidebarContent>
           </Sidebar>
 
-          <main className="flex min-h-0 flex-1 flex-col overflow-hidden md:h-[580px]">
+          <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden md:h-[580px]">
             <header className="flex h-16 shrink-0 items-center border-b">
               <div className="flex min-w-0 items-center gap-2 px-3 sm:px-4">
                 <Breadcrumb>
@@ -648,7 +658,7 @@ export function BookingFormDialog({
               </Select>
             </div>
 
-            <div className="flex-1 space-y-5 overflow-y-auto p-4 md:p-6">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-y-contain p-4 pb-6 [touch-action:pan-y] md:p-6">
               {activeSection === "booking" ? (
                 <section className="space-y-4">
                   <Card className="shadow-none">
@@ -1228,12 +1238,9 @@ export function BookingFormDialog({
                                     Passport front preview
                                   </p>
                                   <div className="relative h-44 w-full overflow-hidden rounded-md border bg-black/5">
-                                    <Image
+                                    <PreviewImage
                                       src={passportFrontPreviewUrl}
-                                      alt="Passport front preview"
-                                      fill
-                                      unoptimized
-                                      className="object-contain"
+                                      label="Passport front preview"
                                     />
                                   </div>
                                 </div>
@@ -1277,12 +1284,9 @@ export function BookingFormDialog({
                                         EID front preview
                                       </p>
                                       <div className="relative h-40 w-full overflow-hidden rounded-md border bg-black/5">
-                                        <Image
+                                        <PreviewImage
                                           src={eidFrontPreviewUrl}
-                                          alt="EID front preview"
-                                          fill
-                                          unoptimized
-                                          className="object-contain"
+                                          label="EID front preview"
                                         />
                                       </div>
                                     </div>
@@ -1293,12 +1297,9 @@ export function BookingFormDialog({
                                         EID back preview
                                       </p>
                                       <div className="relative h-40 w-full overflow-hidden rounded-md border bg-black/5">
-                                        <Image
+                                        <PreviewImage
                                           src={eidBackPreviewUrl}
-                                          alt="EID back preview"
-                                          fill
-                                          unoptimized
-                                          className="object-contain"
+                                          label="EID back preview"
                                         />
                                       </div>
                                     </div>

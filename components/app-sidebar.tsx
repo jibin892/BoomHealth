@@ -63,7 +63,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuButton size="lg" asChild>
               <Link href="/dashboard/bookings">
                 <Image
-                  src="/favicon-32x32.png"
+                  src="/icon.png"
                   alt="DarDoc"
                   width={32}
                   height={32}
