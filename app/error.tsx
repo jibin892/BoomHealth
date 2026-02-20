@@ -3,7 +3,7 @@
 import { useEffect } from "react"
 
 import { PageErrorState } from "@/components/ui/page-error-state"
-import { isLikelyNetworkError } from "@/lib/error-utils"
+import { getErrorPresentation } from "@/lib/error-presentation"
 
 type AppErrorProps = {
   error: Error & { digest?: string }
@@ -15,20 +15,16 @@ export default function AppError({ error, reset }: AppErrorProps) {
     console.error(error)
   }, [error])
 
-  const isNetworkError = isLikelyNetworkError(error)
+  const errorPresentation = getErrorPresentation(error)
 
   return (
     <main className="min-h-svh p-4 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-3xl">
         <PageErrorState
-          title={isNetworkError ? "Network Error" : "Something went wrong"}
-          description={
-            isNetworkError
-              ? "We could not reach the server. Check your connection and try again."
-              : "An unexpected error occurred while loading this page. Please try again."
-          }
+          title={errorPresentation.title}
+          description={errorPresentation.description}
           onRetry={reset}
-          isNetworkError={isNetworkError}
+          isNetworkError={errorPresentation.isNetworkError}
         />
       </div>
     </main>

@@ -72,28 +72,30 @@ export function TablePagination({
           </Select>
         </div>
 
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:flex sm:items-center">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 w-full sm:w-auto"
-            onClick={() => onPageChange(page - 1)}
-            disabled={page <= 1 || isEmpty}
-          >
-            Previous
-          </Button>
-          <span className="text-muted-foreground min-w-[88px] text-center text-xs sm:min-w-[96px]">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <span className="text-muted-foreground text-center text-xs sm:order-2 sm:min-w-[96px]">
             Page {page} of {totalPages}
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 w-full sm:w-auto"
-            onClick={() => onPageChange(page + 1)}
-            disabled={page >= totalPages || isEmpty}
-          >
-            Next
-          </Button>
+          <div className="grid grid-cols-2 gap-2 sm:order-1 sm:flex sm:items-center">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 w-full sm:w-auto"
+              onClick={() => onPageChange(page - 1)}
+              disabled={page <= 1 || isEmpty}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 w-full sm:w-auto"
+              onClick={() => onPageChange(page + 1)}
+              disabled={page >= totalPages || isEmpty}
+            >
+              Next
+            </Button>
+          </div>
         </div>
       </div>
     </div>

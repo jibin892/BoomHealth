@@ -11,7 +11,6 @@ const NETWORK_PATTERNS = [
   "econnreset",
   "econnaborted",
   "err_network",
-  "invalid url",
 ]
 
 export function isLikelyNetworkErrorMessage(message?: string | null) {

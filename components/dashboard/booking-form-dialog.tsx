@@ -40,8 +40,14 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { formatAedAmount } from "@/lib/currency"
 import {
   Sidebar,
   SidebarContent,
@@ -188,6 +194,37 @@ function formatDateTime(value?: string | null) {
     minute: "2-digit",
     hour12: true,
   }).format(parsed)
+}
+
+function formatReadableVisitDateTime(value?: string | null) {
+  if (!value) return "-"
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Dubai",
+  }).formatToParts(parsed)
+
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value || ""
+
+  const weekday = part("weekday")
+  const day = part("day")
+  const month = part("month")
+  const year = part("year")
+  const hour = part("hour")
+  const minute = part("minute")
+  const dayPeriod = part("dayPeriod").toUpperCase()
+
+  return `${weekday}, ${day} ${month} ${year} at ${hour}:${minute} ${dayPeriod}`
 }
 
 function getSampleSubmissionError(error: unknown) {
@@ -506,15 +543,12 @@ export function BookingFormDialog({
     submissionDocumentFile,
   ])
 
-  const amount = formatAedAmount(booking?.amount ?? 0)
   const bookingDetailItems: Array<{ label: string; value: React.ReactNode }> = [
     { label: "Booking ID", value: booking?.apiBookingId ?? "-" },
     { label: "Order ID", value: booking?.orderId || "-" },
-    { label: "Start Time", value: formatDateTime(booking?.startAt) },
-    { label: "End Time", value: formatDateTime(booking?.endAt) },
+    { label: "Start Time", value: formatReadableVisitDateTime(booking?.startAt) },
+    { label: "End Time", value: formatReadableVisitDateTime(booking?.endAt) },
     { label: "Created At", value: formatDateTime(booking?.createdAt) },
-    { label: "Paid At", value: formatDateTime(booking?.paidAt) },
-    { label: "Amount", value: amount },
   ]
   const hasCoordinates =
     typeof booking?.locationLatitude === "number" &&
@@ -535,34 +569,14 @@ export function BookingFormDialog({
       const destination = `${booking.locationLatitude},${booking.locationLongitude}`
       return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`
     }
-
-    const destinationQuery = [
-      booking.locationAddress,
-      booking.locationLabel,
-      booking.patientName,
-      "Dubai UAE",
-    ]
-      .filter((value): value is string => Boolean(value && value.trim()))
-      .join(", ")
-
-    if (!destinationQuery) return null
-
-    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destinationQuery)}&travelmode=driving`
+    return null
   }, [booking])
   const locationDetailItems: Array<{ label: string; value: React.ReactNode }> = [
     { label: "Resource Type", value: booking?.resourceType || "-" },
     { label: "Resource ID", value: booking?.resourceId || "-" },
     { label: "Destination", value: locationDestination },
-    {
-      label: "Coordinates",
-      value: hasCoordinates
-        ? `${booking?.locationLatitude}, ${booking?.locationLongitude}`
-        : "-",
-    },
     { label: "Visit Date", value: booking?.date || "-" },
     { label: "Visit Slot", value: booking?.slot || "-" },
-    { label: "Start Time", value: formatDateTime(booking?.startAt) },
-    { label: "End Time", value: formatDateTime(booking?.endAt) },
   ]
   const pendingPatientChangesCount = patientUpdates.length
 
@@ -596,7 +610,7 @@ export function BookingFormDialog({
             </SidebarContent>
           </Sidebar>
 
-          <main className="flex h-[calc(95dvh-4rem)] flex-1 flex-col overflow-hidden md:h-[580px]">
+          <main className="flex min-h-0 flex-1 flex-col overflow-hidden md:h-[580px]">
             <header className="flex h-16 shrink-0 items-center border-b">
               <div className="flex min-w-0 items-center gap-2 px-3 sm:px-4">
                 <Breadcrumb>
@@ -614,21 +628,24 @@ export function BookingFormDialog({
             </header>
 
             <div className="border-b px-3 py-2 md:hidden">
-              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-                {sectionItems.map((item) => (
-                  <Button
-                    key={item.key}
-                    type="button"
-                    size="sm"
-                    variant={activeSection === item.key ? "default" : "outline"}
-                    className="shrink-0"
-                    onClick={() => setActiveSection(item.key)}
-                  >
-                    <item.icon className="mr-1 size-4" />
-                    {item.name}
-                  </Button>
-                ))}
-              </div>
+              <Select
+                value={activeSection}
+                onValueChange={(value) => setActiveSection(value as DialogSection)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select section" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sectionItems.map((item) => (
+                    <SelectItem key={item.key} value={item.key}>
+                      <span className="flex items-center gap-2">
+                        <item.icon className="size-4" />
+                        {item.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex-1 space-y-5 overflow-y-auto p-4 md:p-6">
@@ -661,11 +678,7 @@ export function BookingFormDialog({
                           <CardDescription className="text-xs uppercase tracking-wide">
                             {item.label}
                           </CardDescription>
-                          <CardTitle
-                            className={`text-base font-semibold ${
-                              item.label === "Amount" ? "tabular-nums" : ""
-                            }`}
-                          >
+                          <CardTitle className="text-base font-semibold">
                             {item.value}
                           </CardTitle>
                         </CardHeader>
@@ -688,7 +701,7 @@ export function BookingFormDialog({
                         </div>
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="default"
                           className="w-full sm:w-auto"
                           disabled={isSavingPatients}
                           onClick={() => {
@@ -729,9 +742,6 @@ export function BookingFormDialog({
                                 <CardTitle className="text-base">
                                   {patient.name.trim() || `Patient ${index + 1}`}
                                 </CardTitle>
-                                <CardDescription>
-                                  Patient ID: {patient.currentPatientId}
-                                </CardDescription>
                               </div>
                               <div className="flex flex-wrap gap-2">
                                 {patient.testsCount !== null ? (
@@ -749,23 +759,6 @@ export function BookingFormDialog({
                           </CardHeader>
                           <CardContent className="p-4 pt-2">
                             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                              <div className="space-y-1.5">
-                                <Label htmlFor={`new-id-${patient.currentPatientId}`}>
-                                  New Patient ID (optional)
-                                </Label>
-                                <Input
-                                  id={`new-id-${patient.currentPatientId}`}
-                                  value={patient.newPatientId}
-                                  onChange={(event) =>
-                                    handlePatientFieldChange(
-                                      patient.currentPatientId,
-                                      "newPatientId",
-                                      event.target.value
-                                    )
-                                  }
-                                  placeholder="PAT_NEW_001"
-                                />
-                              </div>
                               <div className="space-y-1.5">
                                 <Label htmlFor={`name-${patient.currentPatientId}`}>Name</Label>
                                 <Input
@@ -860,8 +853,8 @@ export function BookingFormDialog({
                             Assignment and visit schedule details for this booking.
                           </CardDescription>
                         </div>
-                        {mapRouteUrl ? (
-                          <Button asChild type="button" variant="outline" size="sm">
+                        {mapRouteUrl && hasCoordinates ? (
+                          <Button asChild type="button" variant="default" size="sm">
                             <a href={mapRouteUrl} target="_blank" rel="noreferrer">
                               <ExternalLink className="size-4" />
                               View Route in Map
@@ -876,11 +869,7 @@ export function BookingFormDialog({
                       <div className="flex flex-wrap gap-2">
                         <Badge variant="outline">{booking?.date || "-"}</Badge>
                         <Badge variant="secondary">{booking?.slot || "-"}</Badge>
-                        {hasCoordinates ? (
-                          <Badge variant="outline">GPS route ready</Badge>
-                        ) : (
-                          <Badge variant="outline">Query route fallback</Badge>
-                        )}
+                        {hasCoordinates ? <Badge variant="outline">Map ready</Badge> : null}
                       </div>
                     </CardHeader>
                   </Card>

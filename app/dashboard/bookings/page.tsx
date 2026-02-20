@@ -189,7 +189,7 @@ export default function BookingsPage() {
             </Breadcrumb>
           </div>
         </header>
-        <div className="flex flex-1 flex-col gap-4 py-4 pb-20 md:py-6 md:pb-6">
+        <div className="flex flex-1 flex-col gap-4 py-4 pb-24 md:py-6 md:pb-6">
           <div className="space-y-2 px-4 lg:px-6">
             <div className="flex flex-wrap items-center gap-2">
               {bookingBuckets.map((bucket) => (

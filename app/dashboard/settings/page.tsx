@@ -40,7 +40,7 @@ export default function SettingsPage() {
             </Breadcrumb>
           </div>
         </header>
-        <div className="flex flex-1 flex-col gap-4 px-4 pb-20 lg:px-6 lg:pb-6">
+        <div className="flex flex-1 flex-col gap-4 px-4 pb-24 lg:px-6 lg:pb-6">
           <ThemeSettingsPanel />
         </div>
         <MobileBottomNav />

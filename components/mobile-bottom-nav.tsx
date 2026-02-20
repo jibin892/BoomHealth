@@ -23,7 +23,10 @@ export function MobileBottomNav() {
   const pathname = usePathname()
 
   return (
-    <nav className="bg-background/95 supports-[backdrop-filter]:bg-background/85 fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur md:hidden">
+    <nav
+      className="bg-background/95 supports-[backdrop-filter]:bg-background/85 fixed inset-x-0 bottom-0 z-50 border-t backdrop-blur md:hidden"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+    >
       <div className="mx-auto grid max-w-screen-sm grid-cols-2 px-1 py-1">
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href)

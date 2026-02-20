@@ -37,8 +37,9 @@ type BookingsTableProps = {
   isRefreshing?: boolean
 }
 
-const apiStatusFilters = ["All", "CREATED", "ACTIVE", "FULFILLED", "CANCELLED"] as const
+const apiStatusFilters = ["All", "ACTIVE", "FULFILLED", "CANCELLED"] as const
 type ApiStatusFilter = (typeof apiStatusFilters)[number]
+type RowApiStatus = Exclude<ApiStatusFilter, "All"> | "CREATED" | "UNKNOWN"
 const pageSizeOptions = [5, 10, 20]
 
 const statusStyles: Record<BookingTableRow["status"], string> = {
@@ -314,7 +315,7 @@ export function BookingsTable({
   )
 }
 
-function getRowApiStatus(row: BookingTableRow): ApiStatusFilter | "UNKNOWN" {
+function getRowApiStatus(row: BookingTableRow): RowApiStatus {
   if (row.bookingStatusRaw === "CREATED") return "CREATED"
   if (row.bookingStatusRaw === "ACTIVE") return "ACTIVE"
   if (row.bookingStatusRaw === "FULFILLED") return "FULFILLED"

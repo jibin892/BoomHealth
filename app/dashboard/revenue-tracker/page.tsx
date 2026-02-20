@@ -86,7 +86,7 @@ export default function RevenueTrackerPage() {
             </Breadcrumb>
           </div>
         </header>
-        <div className="flex flex-1 flex-col gap-4 pb-20 md:pb-6">
+        <div className="flex flex-1 flex-col gap-4 pb-24 md:pb-6">
           <OverviewCards items={overviewItems} mobileLabel="Revenue Overview" />
           <RevenueTable
             rows={revenueRows}
