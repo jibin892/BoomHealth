@@ -8,7 +8,7 @@ export default async function SignUpPage() {
   const { userId } = await auth()
 
   if (userId) {
-    redirect("/dashboard")
+    redirect("/dashboard/bookings")
   }
 
   return (
@@ -17,8 +17,8 @@ export default async function SignUpPage() {
         path="/sign-up"
         routing="path"
         signInUrl="/sign-in"
-        forceRedirectUrl="/dashboard"
-        fallbackRedirectUrl="/dashboard"
+        forceRedirectUrl="/dashboard/bookings"
+        fallbackRedirectUrl="/dashboard/bookings"
       />
     </AuthCardShell>
   )

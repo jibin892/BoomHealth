@@ -3,6 +3,7 @@
 import * as React from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { useUser } from "@clerk/nextjs"
 import {
   BarChart3,
   CalendarCheck2,
@@ -23,11 +24,6 @@ import {
 } from '@/components/ui/sidebar'
 
 const data = {
-  user: {
-    name: "BoomHealth Ops",
-    email: "ops@boomhealth.ae",
-    avatar: "/avatars/shadcn.jpg",
-  },
   navMain: [
     {
       title: "Bookings",
@@ -50,6 +46,24 @@ const data = {
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { user } = useUser()
+
+  const sidebarUser = React.useMemo(
+    () => ({
+      name:
+        user?.fullName?.trim() ||
+        user?.username ||
+        user?.firstName ||
+        "Signed In User",
+      email:
+        user?.primaryEmailAddress?.emailAddress ||
+        user?.emailAddresses?.[0]?.emailAddress ||
+        "",
+      avatar: user?.imageUrl,
+    }),
+    [user]
+  )
+
   return (
     <Sidebar variant="inset" {...props}>
       <SidebarHeader>
@@ -79,7 +93,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={sidebarUser} />
       </SidebarFooter>
     </Sidebar>
   )
