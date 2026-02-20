@@ -135,11 +135,64 @@ export function RevenueTable({
   const hasFilters =
     search.trim().length > 0 || selectedYear !== "all" || selectedMonth !== "all"
   const isEmpty = filteredRows.length === 0
+  const clearFilters = React.useCallback(() => {
+    setSearch("")
+    setSelectedYear("all")
+    setSelectedMonth("all")
+  }, [])
 
   return (
     <div className="px-4 pb-4 lg:px-6 lg:pb-6">
-      <Card className="shadow-xs">
-        <CardHeader>
+      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/85 sticky top-14 z-10 -mx-4 mb-3 space-y-3 border-b px-4 pt-2 pb-3 backdrop-blur md:hidden">
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold">{title}</h2>
+          <p className="text-muted-foreground text-xs">{description}</p>
+        </div>
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search month or amount"
+        />
+        {hasFilters ? (
+          <Button variant="outline" className="w-full" onClick={clearFilters}>
+            Clear Filters
+          </Button>
+        ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <Select value={selectedYear} onValueChange={setSelectedYear}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Year" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All years</SelectItem>
+              {yearOptions.map((year) => (
+                <SelectItem key={year} value={year}>
+                  {year}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Month" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All months</SelectItem>
+              {monthOptions.map((month) => (
+                <SelectItem key={month} value={month}>
+                  {month}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <p className="text-muted-foreground text-xs">
+          Showing {filteredRows.length} of {rows.length} months
+        </p>
+      </div>
+
+      <Card className="border-0 bg-transparent shadow-none md:border md:bg-card md:shadow-xs">
+        <CardHeader className="hidden md:flex">
           <CardTitle>{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
           <div className="mt-3 flex flex-col gap-3">
@@ -153,11 +206,7 @@ export function RevenueTable({
               {hasFilters ? (
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    setSearch("")
-                    setSelectedYear("all")
-                    setSelectedMonth("all")
-                  }}
+                  onClick={clearFilters}
                 >
                   Clear Filters
                 </Button>
@@ -196,7 +245,7 @@ export function RevenueTable({
             </p>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 md:p-6 md:pt-0">
           {isEmpty ? (
             <div className="flex min-h-[240px] flex-col items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center">
               {hasFilters ? (
@@ -216,11 +265,7 @@ export function RevenueTable({
                 <Button
                   variant="outline"
                   className="mt-4"
-                  onClick={() => {
-                    setSearch("")
-                    setSelectedYear("all")
-                    setSelectedMonth("all")
-                  }}
+                  onClick={clearFilters}
                 >
                   Clear Filters
                 </Button>
@@ -230,7 +275,10 @@ export function RevenueTable({
             <>
               <div className="space-y-3 md:hidden">
                 {paginatedRows.map((row) => (
-                  <div key={row.month} className="rounded-lg border p-3">
+                  <div
+                    key={row.month}
+                    className="rounded-2xl border border-border/70 bg-card p-4 shadow-xs transition-transform active:scale-[0.995]"
+                  >
                     <p className="text-sm font-semibold">{row.month}</p>
                     <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                       <p className="text-muted-foreground">Bookings</p>

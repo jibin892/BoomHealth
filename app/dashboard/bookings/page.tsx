@@ -169,14 +169,15 @@ export default function BookingsPage() {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2">
+        <header className="bg-background/95 supports-[backdrop-filter]:bg-background/85 sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b backdrop-blur md:static md:h-16 md:bg-transparent md:backdrop-blur-none">
           <div className="flex min-w-0 items-center gap-2 px-3 sm:px-4">
             <SidebarTrigger className="-ml-1" />
             <Separator
               orientation="vertical"
-              className="mr-2 data-[orientation=vertical]:h-4"
+              className="mr-2 hidden data-[orientation=vertical]:h-4 md:block"
             />
-            <Breadcrumb>
+            <h1 className="text-sm font-semibold md:hidden">Bookings</h1>
+            <Breadcrumb className="hidden md:block">
               <BreadcrumbList>
                 <BreadcrumbItem>
                   <BreadcrumbPage>Bookings</BreadcrumbPage>
@@ -191,7 +192,7 @@ export default function BookingsPage() {
             </Breadcrumb>
           </div>
         </header>
-        <div className="flex flex-1 flex-col gap-4 py-4 pb-24 md:py-6 md:pb-6">
+        <div className="flex flex-1 flex-col gap-4 py-4 pb-[calc(6rem+env(safe-area-inset-bottom))] md:py-6 md:pb-6">
           <div className="space-y-2 px-4 lg:px-6">
             <div className="flex flex-wrap items-center gap-2">
               {bookingBuckets.map((bucket) => (

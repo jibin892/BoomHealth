@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CalendarX2, ChevronRight, SearchX } from "lucide-react"
+import { CalendarX2, ChevronLeft, ChevronRight, SearchX } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -114,6 +114,7 @@ export function BookingsTable({
   const [status, setStatus] = React.useState<ApiStatusFilter>("All")
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState<number>(pageSizeOptions[0])
+  const mobileTabsRef = React.useRef<HTMLDivElement>(null)
 
   const filteredRows = React.useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -163,60 +164,96 @@ export function BookingsTable({
     setSearch("")
     setStatus("All")
   }, [])
+  const scrollMobileTabs = React.useCallback((direction: "left" | "right") => {
+    const node = mobileTabsRef.current
+    if (!node) return
+
+    const offset = direction === "left" ? -140 : 140
+    node.scrollBy({ left: offset, behavior: "smooth" })
+  }, [])
 
   return (
     <div className="px-4 pb-4 lg:px-6 lg:pb-6">
-      <div className="mb-3 space-y-3 md:hidden">
+      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/85 sticky top-14 z-10 -mx-4 mb-3 space-y-3 border-b px-4 pt-2 pb-3 backdrop-blur md:hidden">
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold">{title}</h2>
+          <p className="text-muted-foreground text-xs">{description}</p>
+        </div>
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search by booking ID, patient, or test"
         />
+
+        <div className="overflow-hidden rounded-lg border bg-card/80">
+          <div className="flex items-center gap-1 border-b px-1">
+            <button
+              type="button"
+              aria-label="Scroll status tabs left"
+              className="text-muted-foreground inline-flex size-7 shrink-0 items-center justify-center rounded-full hover:bg-muted"
+              onClick={() => scrollMobileTabs("left")}
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+
+            <div
+              ref={mobileTabsRef}
+              role="tablist"
+              aria-label="Booking status filter"
+              className="flex flex-1 gap-1 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {apiStatusFilters.map((option) => {
+                const isActive = status === option
+
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => setStatus(option)}
+                    className={cn(
+                      "relative shrink-0 px-3 py-2 text-sm font-medium transition-colors",
+                      isActive ? "text-primary" : "text-muted-foreground"
+                    )}
+                  >
+                    {statusFilterLabel[option]}
+                    <span
+                      className={cn(
+                        "absolute right-1 left-1 bottom-0 h-0.5 rounded-full bg-primary transition-opacity",
+                        isActive ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                  </button>
+                )
+              })}
+            </div>
+
+            <button
+              type="button"
+              aria-label="Scroll status tabs right"
+              className="text-muted-foreground inline-flex size-7 shrink-0 items-center justify-center rounded-full hover:bg-muted"
+              onClick={() => scrollMobileTabs("right")}
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          </div>
+        </div>
         {hasFilters ? (
           <Button variant="outline" className="w-full" onClick={clearFilters}>
             Clear Filters
           </Button>
         ) : null}
-
-        <div className="rounded-lg border p-1">
-          <div
-            role="tablist"
-            aria-label="Booking status filter"
-            className="grid grid-cols-2 gap-1"
-          >
-            {apiStatusFilters.map((option) => {
-              const isActive = status === option
-
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  onClick={() => setStatus(option)}
-                  className={cn(
-                    "rounded-md px-3 py-2 text-center text-xs font-medium transition-colors",
-                    isActive
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "border border-border bg-background text-muted-foreground hover:bg-muted/50"
-                  )}
-                >
-                  {statusFilterLabel[option]}
-                </button>
-              )
-            })}
-          </div>
-        </div>
         <p className="text-muted-foreground text-xs">
           Showing {filteredRows.length} of {rows.length} bookings
         </p>
       </div>
 
-      <Card className="shadow-xs">
-        <CardHeader>
+      <Card className="border-0 bg-transparent shadow-none md:border md:bg-card md:shadow-xs">
+        <CardHeader className="hidden md:flex">
           <CardTitle>{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
-          <div className="mt-3 hidden flex-col gap-3 md:flex">
+          <div className="mt-3 flex flex-col gap-3">
             <div className="flex flex-col gap-3 md:flex-row">
               <Input
                 value={search}
@@ -252,7 +289,7 @@ export function BookingsTable({
             </p>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 md:p-6 md:pt-0">
           {isEmpty ? (
             <div className="flex min-h-[240px] flex-col items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center">
               {hasFilters ? (
@@ -291,7 +328,7 @@ export function BookingsTable({
                   return (
                     <div
                       key={row.bookingId}
-                      className="bg-card rounded-xl border border-border/70 p-4 shadow-xs"
+                      className="bg-card rounded-2xl border border-border/70 p-4 shadow-xs transition-transform active:scale-[0.995]"
                     >
                       <div className="border-b border-border/60 pb-3">
                         <div className="flex items-start justify-between gap-2">
