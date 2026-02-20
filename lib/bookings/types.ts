@@ -22,6 +22,10 @@ export type BookingTableRow = {
   orderStatus?: string | null
   resourceType?: string | null
   resourceId?: string | null
+  locationLabel?: string | null
+  locationAddress?: string | null
+  locationLatitude?: number | null
+  locationLongitude?: number | null
   startAt?: string
   endAt?: string | null
   createdAt?: string | null

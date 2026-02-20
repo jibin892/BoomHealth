@@ -32,6 +32,10 @@ export type CollectorBookingItem = {
   booking_status: CollectorBookingStatus | string
   resource_type?: string | null
   resource_id?: string | null
+  location_label?: string | null
+  location_address?: string | null
+  location_latitude?: number | null
+  location_longitude?: number | null
   start_at: string
   end_at?: string | null
   created_at?: string | null

@@ -92,12 +92,50 @@ function mapAmountAed(item: CollectorBookingItem) {
   return Number((fils / 100).toFixed(2))
 }
 
+function parseNumberOrNull(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+
+  return null
+}
+
 export function mapCollectorBookingToTableRow(
   item: CollectorBookingItem
 ): BookingTableRow {
   const patients = mapPatients(item)
   const primaryPatientName = patients[0]?.name || "Patient"
   const additionalPatients = Math.max(0, patients.length - 1)
+  const rawItem = item as unknown as Record<string, unknown>
+  const latitude =
+    parseNumberOrNull(item.location_latitude) ??
+    parseNumberOrNull(rawItem.latitude) ??
+    parseNumberOrNull(rawItem.lat) ??
+    parseNumberOrNull((rawItem.location as Record<string, unknown> | undefined)?.latitude) ??
+    parseNumberOrNull((rawItem.location as Record<string, unknown> | undefined)?.lat)
+  const longitude =
+    parseNumberOrNull(item.location_longitude) ??
+    parseNumberOrNull(rawItem.longitude) ??
+    parseNumberOrNull(rawItem.lng) ??
+    parseNumberOrNull((rawItem.location as Record<string, unknown> | undefined)?.longitude) ??
+    parseNumberOrNull((rawItem.location as Record<string, unknown> | undefined)?.lng)
+  const locationAddress =
+    item.location_address ??
+    (typeof rawItem.address === "string" ? rawItem.address : null) ??
+    (typeof rawItem.location_address === "string" ? rawItem.location_address : null) ??
+    (typeof rawItem.service_address === "string" ? rawItem.service_address : null) ??
+    (typeof rawItem.customer_address === "string" ? rawItem.customer_address : null)
+  const locationLabel =
+    item.location_label ??
+    (typeof rawItem.location_label === "string" ? rawItem.location_label : null) ??
+    (typeof rawItem.location_name === "string" ? rawItem.location_name : null)
 
   return {
     bookingId: item.order_id || `BK-${item.booking_id}`,
@@ -107,6 +145,10 @@ export function mapCollectorBookingToTableRow(
     orderStatus: item.order_status ?? null,
     resourceType: item.resource_type ?? null,
     resourceId: item.resource_id ?? null,
+    locationLabel,
+    locationAddress,
+    locationLatitude: latitude,
+    locationLongitude: longitude,
     startAt: item.start_at,
     endAt: item.end_at ?? null,
     createdAt: item.created_at ?? null,

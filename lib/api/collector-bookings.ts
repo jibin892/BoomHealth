@@ -75,6 +75,8 @@ function createFallbackBookingItem(index: number): CollectorBookingItem {
   const status = FALLBACK_STATUSES[index % FALLBACK_STATUSES.length]
   const amountExpected = 9_500 + (index % 8) * 2_500
   const bookingId = 700_000 + index
+  const fallbackLat = 25.2048 + index * 0.002
+  const fallbackLng = 55.2708 + index * 0.002
 
   return {
     booking_id: bookingId,
@@ -82,6 +84,10 @@ function createFallbackBookingItem(index: number): CollectorBookingItem {
     booking_status: status,
     resource_type: "HOME_VISIT",
     resource_id: `collector-slot-${index + 1}`,
+    location_label: "Dubai Home Visit",
+    location_address: `Jumeirah District ${index + 1}, Dubai, UAE`,
+    location_latitude: Number(fallbackLat.toFixed(6)),
+    location_longitude: Number(fallbackLng.toFixed(6)),
     start_at: startAt.toISOString(),
     end_at: endAt.toISOString(),
     created_at: createdAt.toISOString(),
