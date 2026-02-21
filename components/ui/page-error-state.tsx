@@ -25,7 +25,7 @@ export function PageErrorState({
   return (
     <div
       className={cn(
-        "flex min-h-[260px] flex-col items-center justify-center rounded-xl border border-dashed px-4 py-8 text-center",
+        "flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed px-4 py-8 text-center",
         className
       )}
     >
@@ -39,7 +39,7 @@ export function PageErrorState({
       {onRetry ? (
         <Button
           variant="outline"
-          className="mt-4"
+          className="mobile-touch-target mt-4 h-10 rounded-xl px-5"
           disabled={isRetrying}
           onClick={onRetry}
         >

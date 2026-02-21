@@ -56,8 +56,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   )
 
   return (
-    <Sidebar variant="inset" {...props}>
-      <SidebarHeader>
+    <Sidebar variant="inset" className="border-r border-sidebar-border/70" {...props}>
+      <SidebarHeader className="p-3 md:p-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
@@ -67,7 +67,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   alt="DarDoc"
                   width={32}
                   height={32}
-                  className="size-8 rounded-lg"
+                  className="size-9 rounded-xl"
                   priority
                 />
                 <div className="grid flex-1 text-left text-sm leading-tight">

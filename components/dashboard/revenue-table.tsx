@@ -143,7 +143,7 @@ export function RevenueTable({
 
   return (
     <div className="px-4 pb-4 lg:px-6 lg:pb-6">
-      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/85 sticky top-14 z-10 -mx-4 mb-3 space-y-3 border-b px-4 pt-2 pb-3 backdrop-blur md:hidden">
+      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/85 sticky top-[calc(env(safe-area-inset-top)+3.45rem)] z-20 -mx-4 mb-3 space-y-3 border-b border-border/70 px-4 pt-2 pb-3 backdrop-blur md:hidden">
         <div className="space-y-1">
           <h2 className="text-base font-semibold">{title}</h2>
           <p className="text-muted-foreground text-xs">{description}</p>
@@ -152,15 +152,20 @@ export function RevenueTable({
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search month or amount"
+          className="mobile-touch-target h-11 rounded-xl"
         />
         {hasFilters ? (
-          <Button variant="outline" className="w-full" onClick={clearFilters}>
+          <Button
+            variant="outline"
+            className="mobile-touch-target h-10 w-full rounded-xl"
+            onClick={clearFilters}
+          >
             Clear Filters
           </Button>
         ) : null}
         <div className="grid grid-cols-2 gap-2">
           <Select value={selectedYear} onValueChange={setSelectedYear}>
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="mobile-touch-target h-10 w-full rounded-xl">
               <SelectValue placeholder="Year" />
             </SelectTrigger>
             <SelectContent>
@@ -173,7 +178,7 @@ export function RevenueTable({
             </SelectContent>
           </Select>
           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="mobile-touch-target h-10 w-full rounded-xl">
               <SelectValue placeholder="Month" />
             </SelectTrigger>
             <SelectContent>
@@ -277,7 +282,7 @@ export function RevenueTable({
                 {paginatedRows.map((row) => (
                   <div
                     key={row.month}
-                    className="rounded-2xl border border-border/70 bg-card p-4 shadow-xs transition-transform active:scale-[0.995]"
+                    className="rounded-2xl border border-border/70 bg-card/95 p-4 shadow-sm transition-transform active:scale-[0.995]"
                   >
                     <p className="text-sm font-semibold">{row.month}</p>
                     <div className="mt-2 grid grid-cols-2 gap-2 text-sm">

@@ -75,7 +75,7 @@ export function OverviewCards({
           <Button
             type="button"
             variant="outline"
-            className="w-full justify-between"
+            className="mobile-touch-target h-11 w-full justify-between rounded-xl bg-card/60"
             aria-expanded={isMobileExpanded}
             aria-label={`Toggle ${mobileLabel.toLowerCase()} cards`}
           >

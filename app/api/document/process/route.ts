@@ -10,6 +10,10 @@ import {
 const OPENAI_RESPONSES_API_URL = "https://api.openai.com/v1/responses"
 const REQUEST_TIMEOUT_MS = 30_000
 const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024
+const MIN_CONFIDENCE_UNSUPPORTED = 0.35
+const MIN_CONFIDENCE_PASSPORT = 0.5
+const MIN_CONFIDENCE_EID_FRONT = 0.5
+const MIN_CONFIDENCE_EID_BACK = 0.45
 
 // TEMP: hardcoded for local/dev testing only. Remove before production.
 const HARDCODED_DEV_OPENAI_API_KEY = ""
@@ -23,7 +27,7 @@ const DEFAULT_EXTRACTED_DATA = {
 
 const DEFAULT_VALIDATION = {
   isValidEID: false,
-  startsWith789: false,
+  startsWith784: false,
 }
 
 const JSON_SCHEMA = {
@@ -55,10 +59,10 @@ const JSON_SCHEMA = {
     validation: {
       type: "object",
       additionalProperties: false,
-      required: ["isValidEID", "startsWith789"],
+      required: ["isValidEID", "startsWith784"],
       properties: {
         isValidEID: { type: "boolean" },
-        startsWith789: { type: "boolean" },
+        startsWith784: { type: "boolean" },
       },
     },
     croppedDocumentImageBase64: { type: "string" },
@@ -122,13 +126,30 @@ function normalizeBase64(value: string) {
   const trimmed = value.trim()
   if (!trimmed) return ""
 
+  const normalizeBody = (rawValue: string) => {
+    const noWhitespace = rawValue.replace(/\s+/g, "")
+    const normalizedBase64 = noWhitespace
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+    const paddingLength = normalizedBase64.length % 4
+
+    if (paddingLength === 0) {
+      return normalizedBase64
+    }
+
+    return normalizedBase64.padEnd(
+      normalizedBase64.length + (4 - paddingLength),
+      "="
+    )
+  }
+
   if (!trimmed.startsWith("data:")) {
-    return trimmed
+    return normalizeBody(trimmed)
   }
 
   const commaIndex = trimmed.indexOf(",")
   if (commaIndex === -1) return ""
-  return trimmed.slice(commaIndex + 1).trim()
+  return normalizeBody(trimmed.slice(commaIndex + 1))
 }
 
 function toNormalizedPayload(
@@ -189,10 +210,12 @@ function toNormalizedPayload(
         typeof validation.isValidEID === "boolean"
           ? validation.isValidEID
           : DEFAULT_VALIDATION.isValidEID,
-      startsWith789:
-        typeof validation.startsWith789 === "boolean"
+      startsWith784:
+        typeof validation.startsWith784 === "boolean"
+          ? validation.startsWith784
+          : typeof validation.startsWith789 === "boolean"
           ? validation.startsWith789
-          : DEFAULT_VALIDATION.startsWith789,
+          : DEFAULT_VALIDATION.startsWith784,
     },
     croppedDocumentImageBase64: rawBase64,
     confidenceScore,
@@ -203,9 +226,9 @@ function toNormalizedPayload(
       .replace(/\s+/g, "")
       .replace(/-/g, "")
 
-    const startsWith789 = normalizedDocumentNumber.startsWith("789")
-    payload.validation.startsWith789 = startsWith789
-    payload.validation.isValidEID = startsWith789 && payload.validation.isValidEID
+    const startsWith784 = normalizedDocumentNumber.startsWith("784")
+    payload.validation.startsWith784 = startsWith784
+    payload.validation.isValidEID = startsWith784 && payload.validation.isValidEID
   }
 
   if (payload.documentType === "PASSPORT" || payload.documentType === "EID_BACK") {
@@ -213,6 +236,55 @@ function toNormalizedPayload(
   }
 
   return payload
+}
+
+function normalizeDocumentNumber(value: string) {
+  return value
+    .replace(/\s+/g, "")
+    .replace(/-/g, "")
+    .replace(/[^A-Za-z0-9]/g, "")
+}
+
+function getDocumentValidationError(
+  payload: ProcessedDocumentPayload,
+  expectedType: OpenAiDocumentType
+) {
+  if (payload.confidenceScore < MIN_CONFIDENCE_UNSUPPORTED) {
+    return "Unsupported document. Please upload or capture a valid Passport or Emirates ID."
+  }
+
+  if (expectedType === "PASSPORT") {
+    const passportNumber = normalizeDocumentNumber(payload.extractedData.documentNumber)
+    const hasPassportNumber = passportNumber.length >= 5
+    const hasName = payload.extractedData.fullName.trim().length >= 3
+
+    if (!hasPassportNumber || !hasName) {
+      return "This is not a valid passport front page. Please upload or capture the passport details page."
+    }
+
+    if (payload.confidenceScore < MIN_CONFIDENCE_PASSPORT) {
+      return "Passport image is unclear. Please recapture the passport front page."
+    }
+  }
+
+  if (expectedType === "EID_FRONT") {
+    const documentNumber = normalizeDocumentNumber(payload.extractedData.documentNumber)
+    const startsWith784 = documentNumber.startsWith("784")
+
+    if (!documentNumber || !startsWith784) {
+      return "This is not a valid Emirates ID front. Please upload or capture an EID front where the ID number starts with 784."
+    }
+
+    if (payload.confidenceScore < MIN_CONFIDENCE_EID_FRONT) {
+      return "Emirates ID front image is unclear. Please recapture the document."
+    }
+  }
+
+  if (expectedType === "EID_BACK" && payload.confidenceScore < MIN_CONFIDENCE_EID_BACK) {
+    return "This is not a valid Emirates ID back. Please upload or capture the EID back side."
+  }
+
+  return null
 }
 
 function buildInstructionPrompt(documentType: OpenAiDocumentType) {
@@ -226,7 +298,9 @@ function buildInstructionPrompt(documentType: OpenAiDocumentType) {
     "4) Return a tightly cropped professional scanner-style result.",
     "For PASSPORT and EID_FRONT extract: fullName, gender, documentNumber, nationality.",
     "For EID_BACK extraction fields can be empty strings.",
-    "For EID_FRONT, startsWith789 must reflect whether documentNumber begins with 789.",
+    "For EID_FRONT, startsWith784 must reflect whether documentNumber begins with 784.",
+    "If the image is not the expected document type, do not hallucinate values.",
+    "For unsupported documents, keep extracted fields empty and set confidenceScore to 0.2 or lower.",
     "Return ONLY strict JSON that matches the provided schema.",
     "croppedDocumentImageBase64 must be raw base64 without data URL prefix.",
     "If image is unclear, return low confidenceScore (<0.6) and best effort fields.",
@@ -321,7 +395,7 @@ export async function POST(request: Request) {
     if (!response.ok) {
       const fallback = await response.text().catch(() => "")
       const message = fallback
-        ? `AI processing failed (${response.status}).`
+        ? `Document processing failed (${response.status}).`
         : "Document not clear. Please recapture."
 
       return NextResponse.json(toError(message), { status: response.status })
@@ -345,6 +419,13 @@ export async function POST(request: Request) {
         toError("Document not clear. Please recapture.", 0.45),
         { status: 422 }
       )
+    }
+
+    const validationError = getDocumentValidationError(normalized, documentTypeValue)
+    if (validationError) {
+      return NextResponse.json(toError(validationError, normalized.confidenceScore), {
+        status: 422,
+      })
     }
 
     return NextResponse.json(normalized)

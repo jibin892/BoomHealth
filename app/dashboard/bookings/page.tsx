@@ -168,15 +168,20 @@ export default function BookingsPage() {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset>
-        <header className="bg-background/95 supports-[backdrop-filter]:bg-background/85 sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b backdrop-blur md:static md:h-16 md:bg-transparent md:backdrop-blur-none">
-          <div className="flex min-w-0 items-center gap-2 px-3 sm:px-4">
-            <SidebarTrigger className="-ml-1" />
+      <SidebarInset className="overflow-x-hidden">
+        <header className="safe-area-top bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-30 flex min-h-14 shrink-0 items-center border-b border-border/70 backdrop-blur md:static md:h-16 md:min-h-16 md:bg-transparent md:pt-0 md:backdrop-blur-none">
+          <div className="flex min-w-0 items-center gap-2 px-3 py-2 sm:px-4 md:py-0">
+            <SidebarTrigger className="-ml-1 h-9 w-9 rounded-full md:h-7 md:w-7" />
             <Separator
               orientation="vertical"
               className="mr-2 hidden data-[orientation=vertical]:h-4 md:block"
             />
-            <h1 className="text-sm font-semibold md:hidden">Bookings</h1>
+            <div className="min-w-0 md:hidden">
+              <h1 className="truncate text-sm font-semibold">Bookings</h1>
+              <p className="text-muted-foreground text-[11px]">
+                {activeBucket === "current" ? "Current queue" : "Past queue"}
+              </p>
+            </div>
             <Breadcrumb className="hidden md:block">
               <BreadcrumbList>
                 <BreadcrumbItem>
@@ -192,9 +197,37 @@ export default function BookingsPage() {
             </Breadcrumb>
           </div>
         </header>
-        <div className="flex flex-1 flex-col gap-4 py-4 pb-[calc(6rem+env(safe-area-inset-bottom))] md:py-6 md:pb-6">
-          <div className="space-y-2 px-4 lg:px-6">
-            <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-1 flex-col gap-5 pt-3 pb-[calc(6.25rem+env(safe-area-inset-bottom))] md:py-6 md:pb-6">
+          <div className="space-y-3 px-4 lg:px-6">
+            <div className="grid grid-cols-[1fr_auto] items-center gap-2 md:hidden">
+              <div className="bg-muted/60 flex items-center rounded-xl p-1">
+                {bookingBuckets.map((bucket) => (
+                  <Button
+                    key={bucket.value}
+                    size="sm"
+                    className="mobile-touch-target h-9 flex-1 rounded-lg text-sm"
+                    variant={activeBucket === bucket.value ? "default" : "ghost"}
+                    onClick={() => setActiveBucket(bucket.value)}
+                  >
+                    {bucket.label}
+                  </Button>
+                ))}
+              </div>
+              <Button
+                size="icon"
+                variant="outline"
+                className="mobile-touch-target h-10 w-10 rounded-xl"
+                disabled={isRefreshing}
+                onClick={() => {
+                  void loadBookings(activeBucket)
+                }}
+              >
+                <RefreshCw className={cn("size-4", isRefreshing && "animate-spin")} />
+                <span className="sr-only">Refresh bookings</span>
+              </Button>
+            </div>
+
+            <div className="hidden flex-wrap items-center gap-2 md:flex">
               {bookingBuckets.map((bucket) => (
                 <Button
                   key={bucket.value}
@@ -226,7 +259,7 @@ export default function BookingsPage() {
           {isInitialLoading ? (
             <BookingsPageSkeleton />
           ) : apiError && rows.length === 0 ? (
-            <div className="px-4 lg:px-6">
+            <div className="px-4 pb-2 lg:px-6">
               <PageErrorState
                 title={isNetworkError ? "Network Error" : "Unable to load bookings"}
                 description={apiError}

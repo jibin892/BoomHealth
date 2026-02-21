@@ -1,12 +1,15 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import {
   ClipboardList,
   ExternalLink,
   FlaskConical,
+  Loader2,
   MapPin,
   UserRound,
+  X,
 } from "lucide-react"
 
 import type { BookingPatient, BookingTableRow } from "@/lib/bookings/types"
@@ -45,13 +48,6 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import {
   Sidebar,
@@ -255,21 +251,97 @@ function getSampleSubmissionError(error: unknown) {
 }
 
 function toPreviewDataUrl(base64: string) {
-  if (base64.startsWith("data:")) {
-    return base64
+  const normalizeBase64Body = (rawValue: string) => {
+    const compact = rawValue
+      .replace(/\s+/g, "")
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+    const paddingLength = compact.length % 4
+
+    if (paddingLength === 0) {
+      return compact
+    }
+
+    return compact.padEnd(compact.length + (4 - paddingLength), "=")
   }
 
-  return `data:image/jpeg;base64,${base64}`
+  const detectImageMimeType = (rawBase64: string) => {
+    if (rawBase64.startsWith("/9j/")) return "image/jpeg"
+    if (rawBase64.startsWith("iVBORw0KGgo")) return "image/png"
+    if (rawBase64.startsWith("R0lGOD")) return "image/gif"
+    if (rawBase64.startsWith("UklGR")) return "image/webp"
+    if (rawBase64.startsWith("Qk")) return "image/bmp"
+
+    return "image/jpeg"
+  }
+
+  const trimmed = base64.trim()
+  if (!trimmed) return ""
+
+  if (trimmed.startsWith("data:")) {
+    const commaIndex = trimmed.indexOf(",")
+    if (commaIndex === -1) return trimmed
+
+    const header = trimmed.slice(0, commaIndex + 1)
+    const normalized = normalizeBase64Body(trimmed.slice(commaIndex + 1))
+    return `${header}${normalized}`
+  }
+
+  const normalized = normalizeBase64Body(trimmed)
+  const mimeType = detectImageMimeType(normalized)
+  return `data:${mimeType};base64,${normalized}`
 }
 
 function PreviewImage({ src, label }: { src: string; label: string }) {
   return (
-    <div
-      role="img"
-      aria-label={label}
-      className="h-full w-full bg-contain bg-center bg-no-repeat"
-      style={{ backgroundImage: `url("${src}")` }}
+    <Image
+      src={src}
+      alt={label}
+      fill
+      unoptimized
+      className="object-contain"
+      sizes="(max-width: 768px) 100vw, 50vw"
     />
+  )
+}
+
+function getProcessingLabel(documentType: OpenAiDocumentType | null) {
+  if (documentType === "PASSPORT") return "Scanning passport front side"
+  if (documentType === "EID_FRONT") return "Scanning Emirates ID front side"
+  if (documentType === "EID_BACK") return "Scanning Emirates ID back side"
+  return "Processing document"
+}
+
+function ProcessingDocumentState({
+  documentType,
+}: {
+  documentType: OpenAiDocumentType | null
+}) {
+  if (!documentType) return null
+
+  return (
+    <div className="rounded-xl border border-primary/35 bg-primary/10 p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15">
+          <Loader2 className="size-5 animate-spin text-primary" />
+        </div>
+        <div className="space-y-0.5">
+          <p className="text-sm font-semibold">Processing document</p>
+          <p className="text-muted-foreground text-xs">
+            {getProcessingLabel(documentType)}
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-1.5 text-xs text-muted-foreground sm:grid-cols-3">
+        <div className="rounded-md bg-background/70 px-2 py-1">Detecting edges</div>
+        <div className="rounded-md bg-background/70 px-2 py-1">
+          Cleaning background
+        </div>
+        <div className="rounded-md bg-background/70 px-2 py-1">
+          Preparing preview
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -493,10 +565,10 @@ export function BookingFormDialog({
         if (documentType === "PASSPORT") {
           setPassportFrontDocument(normalizedDocument)
         } else if (documentType === "EID_FRONT") {
-          if (!processed.validation.startsWith789) {
+          if (!processed.validation.startsWith784) {
             setEidFrontDocument(null)
             setSampleErrorMessage(
-              "Emirates ID must start with 789. Please recapture or upload a valid EID front."
+              "Emirates ID must start with 784. Please recapture or upload a valid EID front."
             )
             return
           }
@@ -685,7 +757,7 @@ export function BookingFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[95dvh] max-h-[95dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-hidden p-0 sm:max-w-[680px] md:h-auto md:max-h-[620px] md:max-w-[980px] lg:max-w-[1120px]">
+      <DialogContent className="h-[100dvh] max-h-[100dvh] w-screen max-w-none overflow-hidden rounded-none border-0 p-0 [&>button]:hidden sm:h-[95dvh] sm:max-h-[95dvh] sm:w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-1rem)] sm:rounded-xl sm:border sm:p-0 md:h-auto md:max-h-[620px] md:max-w-[980px] lg:max-w-[1120px]">
         <DialogTitle className="sr-only">Booking Details</DialogTitle>
         <DialogDescription className="sr-only">
           Review booking details, update patient information, and submit sample collection.
@@ -714,9 +786,9 @@ export function BookingFormDialog({
           </Sidebar>
 
           <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden md:h-[580px]">
-            <header className="flex h-16 shrink-0 items-center border-b">
-              <div className="flex min-w-0 items-center gap-2 px-3 sm:px-4">
-                <Breadcrumb>
+            <header className="safe-area-top flex min-h-14 shrink-0 items-center border-b md:h-16">
+              <div className="flex w-full min-w-0 items-center justify-between gap-2 px-3 sm:px-4">
+                <Breadcrumb className="min-w-0">
                   <BreadcrumbList>
                     <BreadcrumbItem>
                       <BreadcrumbPage>Bookings</BreadcrumbPage>
@@ -727,31 +799,48 @@ export function BookingFormDialog({
                     </BreadcrumbItem>
                   </BreadcrumbList>
                 </Breadcrumb>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mobile-touch-target h-9 shrink-0 rounded-full border-border/70 px-3"
+                  onClick={() => onOpenChange(false)}
+                >
+                  <X className="size-4" />
+                  <span className="text-xs font-medium">Close</span>
+                </Button>
               </div>
             </header>
 
-            <div className="border-b px-3 py-2 md:hidden">
-              <Select
-                value={activeSection}
-                onValueChange={(value) => setActiveSection(value as DialogSection)}
+            <div className="border-b px-3 py-3 md:hidden">
+              <div
+                role="tablist"
+                aria-label="Booking details sections"
+                className="grid grid-cols-2 gap-2"
               >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select section" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sectionItems.map((item) => (
-                    <SelectItem key={item.key} value={item.key}>
-                      <span className="flex items-center gap-2">
-                        <item.icon className="size-4" />
-                        {item.name}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {sectionItems.map((item) => {
+                  const isActive = activeSection === item.key
+
+                  return (
+                    <Button
+                      key={item.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      size="sm"
+                      variant={isActive ? "default" : "outline"}
+                      className="mobile-touch-target h-11 w-full justify-start rounded-xl px-3"
+                      onClick={() => setActiveSection(item.key)}
+                    >
+                      <item.icon className="size-4" />
+                      <span className="truncate">{item.name}</span>
+                    </Button>
+                  )
+                })}
+              </div>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-y-contain p-4 pb-6 [touch-action:pan-y] md:p-6">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-y-contain p-4 pb-[calc(7rem+env(safe-area-inset-bottom))] [touch-action:pan-y] md:p-6 md:pb-6">
               {activeSection === "booking" ? (
                 <section className="space-y-4">
                   <Card className="shadow-none">
@@ -782,7 +871,7 @@ export function BookingFormDialog({
                             {item.label}
                           </CardDescription>
                           <CardTitle className="text-base font-semibold">
-                            {item.value}
+                            <span className="break-words">{item.value}</span>
                           </CardTitle>
                         </CardHeader>
                       </Card>
@@ -805,13 +894,20 @@ export function BookingFormDialog({
                         <Button
                           type="button"
                           variant="default"
-                          className="w-full sm:w-auto"
+                          className="mobile-touch-target h-11 w-full sm:h-10 sm:w-auto"
                           disabled={isSavingPatients}
                           onClick={() => {
                             void handleSavePatients()
                           }}
                         >
-                          {isSavingPatients ? "Saving..." : "Save Patient Details"}
+                          {isSavingPatients ? (
+                            "Saving..."
+                          ) : (
+                            <>
+                              <span className="sm:hidden">Save Details</span>
+                              <span className="hidden sm:inline">Save Patient Details</span>
+                            </>
+                          )}
                         </Button>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -985,7 +1081,7 @@ export function BookingFormDialog({
                             {item.label}
                           </CardDescription>
                           <CardTitle className="text-base font-semibold">
-                            {item.value}
+                            <span className="break-words">{item.value}</span>
                           </CardTitle>
                         </CardHeader>
                       </Card>
@@ -1191,7 +1287,7 @@ export function BookingFormDialog({
                                     }}
                                   >
                                     {processingDocumentType === "PASSPORT"
-                                      ? "Processing Passport Front..."
+                                      ? "Scanning Passport Front..."
                                       : passportFrontDocument
                                       ? "Recapture Passport Front"
                                       : "Capture Passport Front"}
@@ -1233,7 +1329,7 @@ export function BookingFormDialog({
                                         }}
                                       >
                                         {processingDocumentType === "EID_FRONT"
-                                          ? "Processing EID Front..."
+                                          ? "Scanning EID Front..."
                                           : eidFrontDocument
                                           ? "Recapture EID Front"
                                           : "Capture EID Front"}
@@ -1250,7 +1346,7 @@ export function BookingFormDialog({
                                         }}
                                       >
                                         {processingDocumentType === "EID_BACK"
-                                          ? "Processing EID Back..."
+                                          ? "Scanning EID Back..."
                                           : eidBackDocument
                                           ? "Recapture EID Back"
                                           : "Capture EID Back"}
@@ -1268,7 +1364,7 @@ export function BookingFormDialog({
                                 onClick={() => passportUploadInputRef.current?.click()}
                               >
                                 {processingDocumentType === "PASSPORT"
-                                  ? "Processing Passport Front..."
+                                  ? "Scanning Passport Front..."
                                   : passportFrontDocument
                                   ? "Re-upload Passport Front"
                                   : "Upload Passport Front"}
@@ -1302,7 +1398,7 @@ export function BookingFormDialog({
                                     onClick={() => eidFrontUploadInputRef.current?.click()}
                                   >
                                     {processingDocumentType === "EID_FRONT"
-                                      ? "Processing EID Front..."
+                                      ? "Scanning EID Front..."
                                       : eidFrontDocument
                                       ? "Re-upload EID Front"
                                       : "Upload EID Front"}
@@ -1315,7 +1411,7 @@ export function BookingFormDialog({
                                     onClick={() => eidBackUploadInputRef.current?.click()}
                                   >
                                     {processingDocumentType === "EID_BACK"
-                                      ? "Processing EID Back..."
+                                      ? "Scanning EID Back..."
                                       : eidBackDocument
                                       ? "Re-upload EID Back"
                                       : "Upload EID Back"}
@@ -1349,7 +1445,7 @@ export function BookingFormDialog({
                               {passportFrontDocument ? (
                                 <div className="space-y-1">
                                   <p className="text-muted-foreground text-[11px]">
-                                    Passport front preview (AI cropped)
+                                    Passport front preview (auto-cropped)
                                   </p>
                                   <div className="relative h-44 w-full overflow-hidden rounded-md border bg-black/5">
                                     <PreviewImage
@@ -1419,7 +1515,7 @@ export function BookingFormDialog({
                                   {eidFrontDocument ? (
                                     <div className="space-y-1">
                                       <p className="text-muted-foreground text-[11px]">
-                                        EID front preview (AI cropped)
+                                        EID front preview (auto-cropped)
                                       </p>
                                       <div className="relative h-40 w-full overflow-hidden rounded-md border bg-black/5">
                                         <PreviewImage
@@ -1442,9 +1538,9 @@ export function BookingFormDialog({
                                         </p>
                                         <p>
                                           <span className="text-muted-foreground">
-                                            Starts with 789:{" "}
+                                            Starts with 784:{" "}
                                           </span>
-                                          {eidFrontDocument.validation.startsWith789
+                                          {eidFrontDocument.validation.startsWith784
                                             ? "Yes"
                                             : "No"}
                                         </p>
@@ -1454,7 +1550,7 @@ export function BookingFormDialog({
                                   {eidBackDocument ? (
                                     <div className="space-y-1">
                                       <p className="text-muted-foreground text-[11px]">
-                                        EID back preview (AI cropped)
+                                        EID back preview (auto-cropped)
                                       </p>
                                       <div className="relative h-40 w-full overflow-hidden rounded-md border bg-black/5">
                                         <PreviewImage
@@ -1488,12 +1584,7 @@ export function BookingFormDialog({
                             </div>
                           ) : null}
 
-                          {isDocumentProcessing ? (
-                            <div className="rounded-md border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-600 dark:text-blue-300">
-                              Processing image with AI. Preview will be shown after crop and
-                              extraction.
-                            </div>
-                          ) : null}
+                          <ProcessingDocumentState documentType={processingDocumentType} />
 
                           <Separator />
 

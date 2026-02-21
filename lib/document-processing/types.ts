@@ -15,7 +15,7 @@ export type DocumentExtractionData = {
 
 export type DocumentValidation = {
   isValidEID: boolean
-  startsWith789: boolean
+  startsWith784: boolean
 }
 
 export type ProcessedDocumentPayload = {
