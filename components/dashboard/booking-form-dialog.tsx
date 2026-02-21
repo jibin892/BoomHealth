@@ -293,6 +293,16 @@ function toPreviewDataUrl(base64: string) {
 }
 
 function PreviewImage({ src, label }: { src: string; label: string }) {
+  const [hasError, setHasError] = React.useState(false)
+
+  if (hasError || !src) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-muted/30 px-3 text-center text-xs text-muted-foreground">
+        Preview unavailable. Please recapture or re-upload this document.
+      </div>
+    )
+  }
+
   return (
     <Image
       src={src}
@@ -301,6 +311,7 @@ function PreviewImage({ src, label }: { src: string; label: string }) {
       unoptimized
       className="object-contain"
       sizes="(max-width: 768px) 100vw, 50vw"
+      onError={() => setHasError(true)}
     />
   )
 }

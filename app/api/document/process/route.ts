@@ -126,11 +126,35 @@ function normalizeBase64(value: string) {
   const trimmed = value.trim()
   if (!trimmed) return ""
 
+  const stripWrappers = (raw: string) => {
+    let next = raw.trim()
+
+    if (
+      (next.startsWith("b'") && next.endsWith("'")) ||
+      (next.startsWith('b"') && next.endsWith('"'))
+    ) {
+      next = next.slice(2, -1)
+    }
+
+    if (
+      (next.startsWith("'") && next.endsWith("'")) ||
+      (next.startsWith('"') && next.endsWith('"'))
+    ) {
+      next = next.slice(1, -1)
+    }
+
+    return next.trim()
+  }
+
   const normalizeBody = (rawValue: string) => {
-    const noWhitespace = rawValue.replace(/\s+/g, "")
+    const noWhitespace = rawValue
+      .replace(/\\n/g, "")
+      .replace(/\\r/g, "")
+      .replace(/\s+/g, "")
     const normalizedBase64 = noWhitespace
       .replace(/-/g, "+")
       .replace(/_/g, "/")
+      .replace(/[^A-Za-z0-9+/=]/g, "")
     const paddingLength = normalizedBase64.length % 4
 
     if (paddingLength === 0) {
@@ -143,13 +167,43 @@ function normalizeBase64(value: string) {
     )
   }
 
-  if (!trimmed.startsWith("data:")) {
-    return normalizeBody(trimmed)
+  const unwrapped = stripWrappers(trimmed)
+  if (!unwrapped.startsWith("data:")) {
+    return normalizeBody(unwrapped)
   }
 
-  const commaIndex = trimmed.indexOf(",")
+  const commaIndex = unwrapped.indexOf(",")
   if (commaIndex === -1) return ""
-  return normalizeBody(trimmed.slice(commaIndex + 1))
+  return normalizeBody(unwrapped.slice(commaIndex + 1))
+}
+
+function isLikelyImageBase64(value: string) {
+  try {
+    const bytes = Buffer.from(value, "base64")
+    if (!bytes || bytes.length < 16) return false
+
+    const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+    const isPng =
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47
+    const isGif = bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46
+    const isBmp = bytes[0] === 0x42 && bytes[1] === 0x4d
+    const isWebp =
+      bytes[0] === 0x52 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x46 &&
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+
+    return isJpeg || isPng || isGif || isBmp || isWebp
+  } catch {
+    return false
+  }
 }
 
 function toNormalizedPayload(
@@ -182,6 +236,10 @@ function toNormalizedPayload(
       : ""
 
   if (!rawBase64) {
+    return null
+  }
+
+  if (!isLikelyImageBase64(rawBase64)) {
     return null
   }
 
