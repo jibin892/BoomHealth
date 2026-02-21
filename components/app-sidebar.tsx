@@ -56,7 +56,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   )
 
   return (
-    <Sidebar variant="inset" className="border-r border-sidebar-border/70" {...props}>
+    <Sidebar variant="inset" {...props}>
       <SidebarHeader className="p-3 md:p-2">
         <SidebarMenu>
           <SidebarMenuItem>
