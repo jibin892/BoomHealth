@@ -10,11 +10,17 @@ import {
 } from "lucide-react"
 
 import type { BookingPatient, BookingTableRow } from "@/lib/bookings/types"
+import { processDocumentImage } from "@/lib/api/document-processing"
 import {
   getApiErrorCode,
   getApiErrorMessage,
   getMissingPatientIds,
 } from "@/lib/api/errors"
+import type {
+  DocumentExtractionData,
+  DocumentValidation,
+  OpenAiDocumentType,
+} from "@/lib/document-processing/types"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -99,6 +105,14 @@ type BookingPatientForm = {
 }
 
 type DialogSection = "booking" | "patients" | "location" | "sample"
+
+type ProcessedImageDocument = {
+  file: File
+  previewDataUrl: string
+  extractedData: DocumentExtractionData
+  validation: DocumentValidation
+  confidenceScore: number
+}
 
 const sectionItems = [
   { key: "booking" as const, name: "Booking Details", icon: ClipboardList },
@@ -240,24 +254,12 @@ function getSampleSubmissionError(error: unknown) {
   return message
 }
 
-function useFilePreview(file: File | null) {
-  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null)
+function toPreviewDataUrl(base64: string) {
+  if (base64.startsWith("data:")) {
+    return base64
+  }
 
-  React.useEffect(() => {
-    if (!file) {
-      setPreviewUrl(null)
-      return
-    }
-
-    const objectUrl = URL.createObjectURL(file)
-    setPreviewUrl(objectUrl)
-
-    return () => {
-      URL.revokeObjectURL(objectUrl)
-    }
-  }, [file])
-
-  return previewUrl
+  return `data:image/jpeg;base64,${base64}`
 }
 
 function PreviewImage({ src, label }: { src: string; label: string }) {
@@ -284,9 +286,15 @@ export function BookingFormDialog({
   const [isCaptureDevice, setIsCaptureDevice] = React.useState(false)
   const [selectedDocumentType, setSelectedDocumentType] =
     React.useState<IdDocumentType>("passport")
-  const [passportFrontFile, setPassportFrontFile] = React.useState<File | null>(null)
-  const [eidFrontFile, setEidFrontFile] = React.useState<File | null>(null)
-  const [eidBackFile, setEidBackFile] = React.useState<File | null>(null)
+  const [passportFrontDocument, setPassportFrontDocument] =
+    React.useState<ProcessedImageDocument | null>(null)
+  const [eidFrontDocument, setEidFrontDocument] =
+    React.useState<ProcessedImageDocument | null>(null)
+  const [eidBackDocument, setEidBackDocument] =
+    React.useState<ProcessedImageDocument | null>(null)
+  const [processingDocumentType, setProcessingDocumentType] = React.useState<
+    OpenAiDocumentType | null
+  >(null)
   const [hasCameraPermission, setHasCameraPermission] = React.useState(false)
   const [isRequestingCameraPermission, setIsRequestingCameraPermission] =
     React.useState(false)
@@ -311,9 +319,7 @@ export function BookingFormDialog({
   const eidBackCaptureInputRef = React.useRef<HTMLInputElement>(null)
 
   const sourcePatients = React.useMemo(() => getSourcePatients(booking), [booking])
-  const passportFrontPreviewUrl = useFilePreview(passportFrontFile)
-  const eidFrontPreviewUrl = useFilePreview(eidFrontFile)
-  const eidBackPreviewUrl = useFilePreview(eidBackFile)
+  const isDocumentProcessing = processingDocumentType !== null
 
   React.useEffect(() => {
     if (open) {
@@ -321,9 +327,10 @@ export function BookingFormDialog({
       setPatientForms(mapPatientsToForms(sourcePatients))
       setShowSampleCollection(false)
       setSelectedDocumentType("passport")
-      setPassportFrontFile(null)
-      setEidFrontFile(null)
-      setEidBackFile(null)
+      setPassportFrontDocument(null)
+      setEidFrontDocument(null)
+      setEidBackDocument(null)
+      setProcessingDocumentType(null)
       setHasCameraPermission(false)
       setIsRequestingCameraPermission(false)
       setIsSavingPatients(false)
@@ -365,15 +372,22 @@ export function BookingFormDialog({
 
   const isSampleDocumentReady = React.useMemo(() => {
     if (selectedDocumentType === "passport") {
-      return Boolean(passportFrontFile)
+      return Boolean(passportFrontDocument)
     }
 
-    return Boolean(eidFrontFile && eidBackFile)
-  }, [eidBackFile, eidFrontFile, passportFrontFile, selectedDocumentType])
+    return Boolean(eidFrontDocument && eidBackDocument)
+  }, [
+    eidBackDocument,
+    eidFrontDocument,
+    passportFrontDocument,
+    selectedDocumentType,
+  ])
 
   const submissionDocumentFile = React.useMemo(() => {
-    return selectedDocumentType === "passport" ? passportFrontFile : eidFrontFile
-  }, [eidFrontFile, passportFrontFile, selectedDocumentType])
+    return selectedDocumentType === "passport"
+      ? passportFrontDocument?.file
+      : eidFrontDocument?.file
+  }, [eidFrontDocument, passportFrontDocument, selectedDocumentType])
 
   const requestCameraPermission = React.useCallback(async () => {
     if (!isCaptureDevice) {
@@ -425,6 +439,85 @@ export function BookingFormDialog({
       ref.current?.click()
     },
     [requestCameraPermission]
+  )
+
+  const clearProcessedDocument = React.useCallback(
+    (documentType: OpenAiDocumentType) => {
+      if (documentType === "PASSPORT") {
+        setPassportFrontDocument(null)
+        return
+      }
+
+      if (documentType === "EID_FRONT") {
+        setEidFrontDocument(null)
+        return
+      }
+
+      setEidBackDocument(null)
+    },
+    []
+  )
+
+  const handleProcessDocument = React.useCallback(
+    async (file: File | null, documentType: OpenAiDocumentType) => {
+      if (!file) return
+
+      if (!file.type.startsWith("image/")) {
+        setSampleErrorMessage("Only image files are supported.")
+        return
+      }
+
+      if (file.size > 8 * 1024 * 1024) {
+        setSampleErrorMessage("Image is too large. Maximum allowed size is 8MB.")
+        return
+      }
+
+      setSampleErrorMessage(null)
+      setSampleSuccessMessage(null)
+      setProcessingDocumentType(documentType)
+
+      try {
+        const processed = await processDocumentImage({
+          file,
+          documentType,
+        })
+
+        const normalizedDocument: ProcessedImageDocument = {
+          file,
+          previewDataUrl: toPreviewDataUrl(processed.croppedDocumentImageBase64),
+          extractedData: processed.extractedData,
+          validation: processed.validation,
+          confidenceScore: processed.confidenceScore,
+        }
+
+        if (documentType === "PASSPORT") {
+          setPassportFrontDocument(normalizedDocument)
+        } else if (documentType === "EID_FRONT") {
+          if (!processed.validation.startsWith789) {
+            setEidFrontDocument(null)
+            setSampleErrorMessage(
+              "Emirates ID must start with 789. Please recapture or upload a valid EID front."
+            )
+            return
+          }
+          setEidFrontDocument(normalizedDocument)
+        } else {
+          setEidBackDocument(normalizedDocument)
+        }
+
+        if (processed.confidenceScore < 0.6) {
+          setSampleErrorMessage(
+            "Document processed with low confidence. Please recapture for better clarity."
+          )
+        }
+      } catch (error) {
+        clearProcessedDocument(documentType)
+        setSampleErrorMessage(getApiErrorMessage(error))
+      } finally {
+        setProcessingDocumentType(null)
+      }
+    },
+    [clearProcessedDocument]
   )
 
   const handlePatientFieldChange = React.useCallback(
@@ -930,11 +1023,10 @@ export function BookingFormDialog({
                         type="file"
                         accept="image/*"
                         className="hidden"
-                        onChange={(event) => {
+                        onChange={async (event) => {
                           const file = event.target.files?.[0] ?? null
-                          setPassportFrontFile(file)
-                          setSampleErrorMessage(null)
-                          setSampleSuccessMessage(null)
+                          await handleProcessDocument(file, "PASSPORT")
+                          event.currentTarget.value = ""
                         }}
                       />
 
@@ -943,11 +1035,10 @@ export function BookingFormDialog({
                         type="file"
                         accept="image/*"
                         className="hidden"
-                        onChange={(event) => {
+                        onChange={async (event) => {
                           const file = event.target.files?.[0] ?? null
-                          setEidFrontFile(file)
-                          setSampleErrorMessage(null)
-                          setSampleSuccessMessage(null)
+                          await handleProcessDocument(file, "EID_FRONT")
+                          event.currentTarget.value = ""
                         }}
                       />
 
@@ -956,11 +1047,10 @@ export function BookingFormDialog({
                         type="file"
                         accept="image/*"
                         className="hidden"
-                        onChange={(event) => {
+                        onChange={async (event) => {
                           const file = event.target.files?.[0] ?? null
-                          setEidBackFile(file)
-                          setSampleErrorMessage(null)
-                          setSampleSuccessMessage(null)
+                          await handleProcessDocument(file, "EID_BACK")
+                          event.currentTarget.value = ""
                         }}
                       />
 
@@ -970,11 +1060,10 @@ export function BookingFormDialog({
                         accept="image/*"
                         capture="environment"
                         className="hidden"
-                        onChange={(event) => {
+                        onChange={async (event) => {
                           const file = event.target.files?.[0] ?? null
-                          setPassportFrontFile(file)
-                          setSampleErrorMessage(null)
-                          setSampleSuccessMessage(null)
+                          await handleProcessDocument(file, "PASSPORT")
+                          event.currentTarget.value = ""
                         }}
                       />
 
@@ -984,11 +1073,10 @@ export function BookingFormDialog({
                         accept="image/*"
                         capture="environment"
                         className="hidden"
-                        onChange={(event) => {
+                        onChange={async (event) => {
                           const file = event.target.files?.[0] ?? null
-                          setEidFrontFile(file)
-                          setSampleErrorMessage(null)
-                          setSampleSuccessMessage(null)
+                          await handleProcessDocument(file, "EID_FRONT")
+                          event.currentTarget.value = ""
                         }}
                       />
 
@@ -998,11 +1086,10 @@ export function BookingFormDialog({
                         accept="image/*"
                         capture="environment"
                         className="hidden"
-                        onChange={(event) => {
+                        onChange={async (event) => {
                           const file = event.target.files?.[0] ?? null
-                          setEidBackFile(file)
-                          setSampleErrorMessage(null)
-                          setSampleSuccessMessage(null)
+                          await handleProcessDocument(file, "EID_BACK")
+                          event.currentTarget.value = ""
                         }}
                       />
 
@@ -1074,7 +1161,9 @@ export function BookingFormDialog({
                                     type="button"
                                     variant="outline"
                                     className="w-full sm:w-auto"
-                                    disabled={isRequestingCameraPermission}
+                                    disabled={
+                                      isRequestingCameraPermission || isDocumentProcessing
+                                    }
                                     onClick={() => {
                                       void requestCameraPermission()
                                     }}
@@ -1094,12 +1183,16 @@ export function BookingFormDialog({
                                     type="button"
                                     variant="outline"
                                     className="w-full sm:w-auto"
-                                    disabled={isRequestingCameraPermission}
+                                    disabled={
+                                      isRequestingCameraPermission || isDocumentProcessing
+                                    }
                                     onClick={() => {
                                       void openCaptureInput(passportCaptureInputRef)
                                     }}
                                   >
-                                    {passportFrontFile
+                                    {processingDocumentType === "PASSPORT"
+                                      ? "Processing Passport Front..."
+                                      : passportFrontDocument
                                       ? "Recapture Passport Front"
                                       : "Capture Passport Front"}
                                   </Button>
@@ -1109,17 +1202,21 @@ export function BookingFormDialog({
                                       <div className="flex items-center justify-between rounded-md border px-3 py-2">
                                         <p className="text-xs font-medium">EID Front</p>
                                         <Badge
-                                          variant={eidFrontFile ? "secondary" : "outline"}
+                                          variant={
+                                            eidFrontDocument ? "secondary" : "outline"
+                                          }
                                         >
-                                          {eidFrontFile ? "Uploaded" : "Pending"}
+                                          {eidFrontDocument ? "Processed" : "Pending"}
                                         </Badge>
                                       </div>
                                       <div className="flex items-center justify-between rounded-md border px-3 py-2">
                                         <p className="text-xs font-medium">EID Back</p>
                                         <Badge
-                                          variant={eidBackFile ? "secondary" : "outline"}
+                                          variant={
+                                            eidBackDocument ? "secondary" : "outline"
+                                          }
                                         >
-                                          {eidBackFile ? "Uploaded" : "Pending"}
+                                          {eidBackDocument ? "Processed" : "Pending"}
                                         </Badge>
                                       </div>
                                     </div>
@@ -1128,12 +1225,16 @@ export function BookingFormDialog({
                                         type="button"
                                         variant="outline"
                                         className="w-full"
-                                        disabled={isRequestingCameraPermission}
+                                        disabled={
+                                          isRequestingCameraPermission || isDocumentProcessing
+                                        }
                                         onClick={() => {
                                           void openCaptureInput(eidFrontCaptureInputRef)
                                         }}
                                       >
-                                        {eidFrontFile
+                                        {processingDocumentType === "EID_FRONT"
+                                          ? "Processing EID Front..."
+                                          : eidFrontDocument
                                           ? "Recapture EID Front"
                                           : "Capture EID Front"}
                                       </Button>
@@ -1141,12 +1242,16 @@ export function BookingFormDialog({
                                         type="button"
                                         variant="outline"
                                         className="w-full"
-                                        disabled={isRequestingCameraPermission}
+                                        disabled={
+                                          isRequestingCameraPermission || isDocumentProcessing
+                                        }
                                         onClick={() => {
                                           void openCaptureInput(eidBackCaptureInputRef)
                                         }}
                                       >
-                                        {eidBackFile
+                                        {processingDocumentType === "EID_BACK"
+                                          ? "Processing EID Back..."
+                                          : eidBackDocument
                                           ? "Recapture EID Back"
                                           : "Capture EID Back"}
                                       </Button>
@@ -1159,9 +1264,12 @@ export function BookingFormDialog({
                                 type="button"
                                 variant="outline"
                                 className="w-full sm:w-auto"
+                                disabled={isDocumentProcessing}
                                 onClick={() => passportUploadInputRef.current?.click()}
                               >
-                                {passportFrontFile
+                                {processingDocumentType === "PASSPORT"
+                                  ? "Processing Passport Front..."
+                                  : passportFrontDocument
                                   ? "Re-upload Passport Front"
                                   : "Upload Passport Front"}
                               </Button>
@@ -1171,17 +1279,17 @@ export function BookingFormDialog({
                                   <div className="flex items-center justify-between rounded-md border px-3 py-2">
                                     <p className="text-xs font-medium">EID Front</p>
                                     <Badge
-                                      variant={eidFrontFile ? "secondary" : "outline"}
+                                      variant={eidFrontDocument ? "secondary" : "outline"}
                                     >
-                                      {eidFrontFile ? "Uploaded" : "Pending"}
+                                      {eidFrontDocument ? "Processed" : "Pending"}
                                     </Badge>
                                   </div>
                                   <div className="flex items-center justify-between rounded-md border px-3 py-2">
                                     <p className="text-xs font-medium">EID Back</p>
                                     <Badge
-                                      variant={eidBackFile ? "secondary" : "outline"}
+                                      variant={eidBackDocument ? "secondary" : "outline"}
                                     >
-                                      {eidBackFile ? "Uploaded" : "Pending"}
+                                      {eidBackDocument ? "Processed" : "Pending"}
                                     </Badge>
                                   </div>
                                 </div>
@@ -1190,9 +1298,12 @@ export function BookingFormDialog({
                                     type="button"
                                     variant="outline"
                                     className="w-full"
+                                    disabled={isDocumentProcessing}
                                     onClick={() => eidFrontUploadInputRef.current?.click()}
                                   >
-                                    {eidFrontFile
+                                    {processingDocumentType === "EID_FRONT"
+                                      ? "Processing EID Front..."
+                                      : eidFrontDocument
                                       ? "Re-upload EID Front"
                                       : "Upload EID Front"}
                                   </Button>
@@ -1200,9 +1311,12 @@ export function BookingFormDialog({
                                     type="button"
                                     variant="outline"
                                     className="w-full"
+                                    disabled={isDocumentProcessing}
                                     onClick={() => eidBackUploadInputRef.current?.click()}
                                   >
-                                    {eidBackFile
+                                    {processingDocumentType === "EID_BACK"
+                                      ? "Processing EID Back..."
+                                      : eidBackDocument
                                       ? "Re-upload EID Back"
                                       : "Upload EID Back"}
                                   </Button>
@@ -1227,21 +1341,45 @@ export function BookingFormDialog({
                             <div className="space-y-2">
                               <p className="text-muted-foreground text-xs">
                                 Passport front:{" "}
-                                {passportFrontFile?.name ||
+                                {passportFrontDocument?.file.name ||
                                   (isCaptureDevice
                                     ? "Not captured"
                                     : "Not uploaded")}
                               </p>
-                              {passportFrontPreviewUrl ? (
+                              {passportFrontDocument ? (
                                 <div className="space-y-1">
                                   <p className="text-muted-foreground text-[11px]">
-                                    Passport front preview
+                                    Passport front preview (AI cropped)
                                   </p>
                                   <div className="relative h-44 w-full overflow-hidden rounded-md border bg-black/5">
                                     <PreviewImage
-                                      src={passportFrontPreviewUrl}
+                                      src={passportFrontDocument.previewDataUrl}
                                       label="Passport front preview"
                                     />
+                                  </div>
+                                  <div className="grid gap-2 rounded-md border p-2 text-xs sm:grid-cols-2">
+                                    <p>
+                                      <span className="text-muted-foreground">
+                                        Full Name:{" "}
+                                      </span>
+                                      {passportFrontDocument.extractedData.fullName || "-"}
+                                    </p>
+                                    <p>
+                                      <span className="text-muted-foreground">
+                                        Document No:{" "}
+                                      </span>
+                                      {passportFrontDocument.extractedData.documentNumber || "-"}
+                                    </p>
+                                    <p>
+                                      <span className="text-muted-foreground">Gender: </span>
+                                      {passportFrontDocument.extractedData.gender || "-"}
+                                    </p>
+                                    <p>
+                                      <span className="text-muted-foreground">
+                                        Nationality:{" "}
+                                      </span>
+                                      {passportFrontDocument.extractedData.nationality || "-"}
+                                    </p>
                                   </div>
                                 </div>
                               ) : null}
@@ -1253,52 +1391,74 @@ export function BookingFormDialog({
                                   <div className="min-w-0">
                                     <p className="text-xs font-medium">EID Front</p>
                                     <p className="text-muted-foreground truncate text-[11px]">
-                                      {eidFrontFile?.name || "-"}
+                                      {eidFrontDocument?.file.name || "-"}
                                     </p>
                                   </div>
                                   <Badge
-                                    variant={eidFrontFile ? "secondary" : "outline"}
+                                    variant={eidFrontDocument ? "secondary" : "outline"}
                                   >
-                                    {eidFrontFile ? "Uploaded" : "Pending"}
+                                    {eidFrontDocument ? "Processed" : "Pending"}
                                   </Badge>
                                 </div>
                                 <div className="flex items-center justify-between rounded-md border px-3 py-2">
                                   <div className="min-w-0">
                                     <p className="text-xs font-medium">EID Back</p>
                                     <p className="text-muted-foreground truncate text-[11px]">
-                                      {eidBackFile?.name || "-"}
+                                      {eidBackDocument?.file.name || "-"}
                                     </p>
                                   </div>
                                   <Badge
-                                    variant={eidBackFile ? "secondary" : "outline"}
+                                    variant={eidBackDocument ? "secondary" : "outline"}
                                   >
-                                    {eidBackFile ? "Uploaded" : "Pending"}
+                                    {eidBackDocument ? "Processed" : "Pending"}
                                   </Badge>
                                 </div>
                               </div>
-                              {eidFrontPreviewUrl || eidBackPreviewUrl ? (
+                              {eidFrontDocument || eidBackDocument ? (
                                 <div className="grid gap-2 sm:grid-cols-2">
-                                  {eidFrontPreviewUrl ? (
+                                  {eidFrontDocument ? (
                                     <div className="space-y-1">
                                       <p className="text-muted-foreground text-[11px]">
-                                        EID front preview
+                                        EID front preview (AI cropped)
                                       </p>
                                       <div className="relative h-40 w-full overflow-hidden rounded-md border bg-black/5">
                                         <PreviewImage
-                                          src={eidFrontPreviewUrl}
+                                          src={eidFrontDocument.previewDataUrl}
                                           label="EID front preview"
                                         />
                                       </div>
+                                      <div className="grid gap-1 rounded-md border p-2 text-xs">
+                                        <p>
+                                          <span className="text-muted-foreground">
+                                            Full Name:{" "}
+                                          </span>
+                                          {eidFrontDocument.extractedData.fullName || "-"}
+                                        </p>
+                                        <p>
+                                          <span className="text-muted-foreground">
+                                            Document No:{" "}
+                                          </span>
+                                          {eidFrontDocument.extractedData.documentNumber || "-"}
+                                        </p>
+                                        <p>
+                                          <span className="text-muted-foreground">
+                                            Starts with 789:{" "}
+                                          </span>
+                                          {eidFrontDocument.validation.startsWith789
+                                            ? "Yes"
+                                            : "No"}
+                                        </p>
+                                      </div>
                                     </div>
                                   ) : null}
-                                  {eidBackPreviewUrl ? (
+                                  {eidBackDocument ? (
                                     <div className="space-y-1">
                                       <p className="text-muted-foreground text-[11px]">
-                                        EID back preview
+                                        EID back preview (AI cropped)
                                       </p>
                                       <div className="relative h-40 w-full overflow-hidden rounded-md border bg-black/5">
                                         <PreviewImage
-                                          src={eidBackPreviewUrl}
+                                          src={eidBackDocument.previewDataUrl}
                                           label="EID back preview"
                                         />
                                       </div>
@@ -1328,12 +1488,23 @@ export function BookingFormDialog({
                             </div>
                           ) : null}
 
+                          {isDocumentProcessing ? (
+                            <div className="rounded-md border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-600 dark:text-blue-300">
+                              Processing image with AI. Preview will be shown after crop and
+                              extraction.
+                            </div>
+                          ) : null}
+
                           <Separator />
 
                           <Button
                             type="button"
                             className="w-full sm:w-auto"
-                            disabled={!isSampleDocumentReady || isSubmittingSample}
+                            disabled={
+                              !isSampleDocumentReady ||
+                              isSubmittingSample ||
+                              isDocumentProcessing
+                            }
                             onClick={() => {
                               void handleSampleSubmit()
                             }}
