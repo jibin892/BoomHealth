@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import Image from "next/image"
 import {
   ClipboardList,
   ExternalLink,
@@ -293,9 +292,45 @@ function toPreviewDataUrl(base64: string) {
 }
 
 function PreviewImage({ src, label }: { src: string; label: string }) {
+  const [resolvedSrc, setResolvedSrc] = React.useState(src)
   const [hasError, setHasError] = React.useState(false)
 
-  if (hasError || !src) {
+  React.useEffect(() => {
+    setHasError(false)
+    setResolvedSrc(src)
+
+    if (!src || !src.startsWith("data:") || !src.includes(";base64,")) {
+      return
+    }
+
+    const commaIndex = src.indexOf(",")
+    if (commaIndex === -1) return
+
+    const mimeMatch = /^data:([^;]+);base64$/i.exec(src.slice(0, commaIndex))
+    const mimeType = mimeMatch?.[1] || "image/jpeg"
+    const base64Value = src.slice(commaIndex + 1)
+
+    try {
+      const binaryString = atob(base64Value)
+      const bytes = new Uint8Array(binaryString.length)
+      for (let index = 0; index < binaryString.length; index += 1) {
+        bytes[index] = binaryString.charCodeAt(index)
+      }
+
+      const blob = new Blob([bytes], { type: mimeType })
+      const blobUrl = URL.createObjectURL(blob)
+      setResolvedSrc(blobUrl)
+
+      return () => {
+        URL.revokeObjectURL(blobUrl)
+      }
+    } catch {
+      setResolvedSrc(src)
+      return
+    }
+  }, [src])
+
+  if (hasError || !resolvedSrc) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-muted/30 px-3 text-center text-xs text-muted-foreground">
         Preview unavailable. Please recapture or re-upload this document.
@@ -304,13 +339,11 @@ function PreviewImage({ src, label }: { src: string; label: string }) {
   }
 
   return (
-    <Image
-      src={src}
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={resolvedSrc}
       alt={label}
-      fill
-      unoptimized
-      className="object-contain"
-      sizes="(max-width: 768px) 100vw, 50vw"
+      className="h-full w-full object-contain"
       onError={() => setHasError(true)}
     />
   )
@@ -1131,9 +1164,10 @@ export function BookingFormDialog({
                         accept="image/*"
                         className="hidden"
                         onChange={async (event) => {
-                          const file = event.target.files?.[0] ?? null
+                          const input = event.currentTarget
+                          const file = input.files?.[0] ?? null
                           await handleProcessDocument(file, "PASSPORT")
-                          event.currentTarget.value = ""
+                          input.value = ""
                         }}
                       />
 
@@ -1143,9 +1177,10 @@ export function BookingFormDialog({
                         accept="image/*"
                         className="hidden"
                         onChange={async (event) => {
-                          const file = event.target.files?.[0] ?? null
+                          const input = event.currentTarget
+                          const file = input.files?.[0] ?? null
                           await handleProcessDocument(file, "EID_FRONT")
-                          event.currentTarget.value = ""
+                          input.value = ""
                         }}
                       />
 
@@ -1155,9 +1190,10 @@ export function BookingFormDialog({
                         accept="image/*"
                         className="hidden"
                         onChange={async (event) => {
-                          const file = event.target.files?.[0] ?? null
+                          const input = event.currentTarget
+                          const file = input.files?.[0] ?? null
                           await handleProcessDocument(file, "EID_BACK")
-                          event.currentTarget.value = ""
+                          input.value = ""
                         }}
                       />
 
@@ -1168,9 +1204,10 @@ export function BookingFormDialog({
                         capture="environment"
                         className="hidden"
                         onChange={async (event) => {
-                          const file = event.target.files?.[0] ?? null
+                          const input = event.currentTarget
+                          const file = input.files?.[0] ?? null
                           await handleProcessDocument(file, "PASSPORT")
-                          event.currentTarget.value = ""
+                          input.value = ""
                         }}
                       />
 
@@ -1181,9 +1218,10 @@ export function BookingFormDialog({
                         capture="environment"
                         className="hidden"
                         onChange={async (event) => {
-                          const file = event.target.files?.[0] ?? null
+                          const input = event.currentTarget
+                          const file = input.files?.[0] ?? null
                           await handleProcessDocument(file, "EID_FRONT")
-                          event.currentTarget.value = ""
+                          input.value = ""
                         }}
                       />
 
@@ -1194,9 +1232,10 @@ export function BookingFormDialog({
                         capture="environment"
                         className="hidden"
                         onChange={async (event) => {
-                          const file = event.target.files?.[0] ?? null
+                          const input = event.currentTarget
+                          const file = input.files?.[0] ?? null
                           await handleProcessDocument(file, "EID_BACK")
-                          event.currentTarget.value = ""
+                          input.value = ""
                         }}
                       />
 

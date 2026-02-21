@@ -10,6 +10,7 @@ import {
 const OPENAI_RESPONSES_API_URL = "https://api.openai.com/v1/responses"
 const REQUEST_TIMEOUT_MS = 30_000
 const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024
+const OPENAI_DOCUMENT_MODEL = process.env.OPENAI_DOCUMENT_MODEL || "gpt-4.1"
 const MIN_CONFIDENCE_UNSUPPORTED = 0.35
 const MIN_CONFIDENCE_PASSPORT = 0.5
 const MIN_CONFIDENCE_EID_FRONT = 0.5
@@ -419,7 +420,7 @@ export async function POST(request: Request) {
           Authorization: `Bearer ${openAiApiKey}`,
         },
         body: JSON.stringify({
-          model: "gpt-4.1",
+          model: OPENAI_DOCUMENT_MODEL,
           input: [
             {
               role: "user",
