@@ -11,3 +11,6 @@ node_modules/
 # clerk configuration (can include secrets)
 /.clerk/
 .vercel
+playwright-report/
+test-results/
+blob-report/

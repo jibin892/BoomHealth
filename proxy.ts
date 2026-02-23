@@ -3,6 +3,10 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"
 const isProtectedRoute = createRouteMatcher(["/dashboard(.*)"])
 
 export default clerkMiddleware(async (auth, req) => {
+  if (process.env.E2E_BYPASS_AUTH === "true") {
+    return
+  }
+
   if (isProtectedRoute(req)) {
     const signInUrl = new URL("/sign-in", req.url).toString()
 

@@ -7,14 +7,20 @@ import {
   FlaskConical,
   Loader2,
   MapPin,
+  RotateCcw,
   UserRound,
   X,
 } from "lucide-react"
 
 import type { BookingPatient, BookingTableRow } from "@/lib/bookings/types"
-import { processDocumentImage } from "@/lib/api/document-processing"
+import {
+  getDocumentProcessingErrorDetails,
+  processDocumentImage,
+} from "@/lib/api/document-processing"
+import { triggerHapticFeedback } from "@/lib/mobile/haptics"
 import {
   getApiErrorCode,
+  getApiErrorId,
   getApiErrorMessage,
   getMissingPatientIds,
 } from "@/lib/api/errors"
@@ -77,6 +83,11 @@ export type SubmitSampleCollectionInput = SaveBookingPatientsInput & {
   idDocumentFile: File
 }
 
+export type SubmitSampleCollectionResult = {
+  syncState: "synced" | "pending" | "failed"
+  queueId?: string
+}
+
 type IdDocumentType = "passport" | "eid"
 
 type BookingFormDialogProps = {
@@ -86,7 +97,7 @@ type BookingFormDialogProps = {
   onSavePatientUpdates?: (payload: SaveBookingPatientsInput) => Promise<void>
   onSubmitSampleCollection?: (
     payload: SubmitSampleCollectionInput
-  ) => Promise<void>
+  ) => Promise<SubmitSampleCollectionResult | void>
 }
 
 type BookingPatientForm = {
@@ -107,6 +118,14 @@ type ProcessedImageDocument = {
   extractedData: DocumentExtractionData
   validation: DocumentValidation
   confidenceScore: number
+}
+
+type DocumentScanSource = "upload" | "capture"
+
+type SampleErrorDetails = {
+  reason: string | null
+  retryable: boolean
+  errorId: string | null
 }
 
 const sectionItems = [
@@ -249,6 +268,25 @@ function getSampleSubmissionError(error: unknown) {
   return message
 }
 
+function formatDocumentErrorReason(reason: string | null) {
+  if (!reason) return null
+
+  const labels: Record<string, string> = {
+    invalid_document_type: "Invalid document type selected",
+    file_required: "Image file is required",
+    unsupported_file_type: "Unsupported file type",
+    file_too_large: "File size exceeds limit",
+    document_not_configured: "Scanner service is not configured",
+    openai_request_failed: "Scanner service request failed",
+    invalid_openai_response: "Scanner returned invalid output",
+    validation_failed: "Document validation failed",
+    timeout: "Scanner timed out",
+    document_not_clear: "Document was unclear",
+  }
+
+  return labels[reason] || reason
+}
+
 function toPreviewDataUrl(base64: string) {
   const normalizeBase64Body = (rawValue: string) => {
     const compact = rawValue
@@ -291,12 +329,39 @@ function toPreviewDataUrl(base64: string) {
   return `data:${mimeType};base64,${normalized}`
 }
 
-function PreviewImage({ src, label }: { src: string; label: string }) {
+function PreviewImage({
+  src,
+  label,
+  fallbackFile,
+}: {
+  src: string
+  label: string
+  fallbackFile?: File | null
+}) {
   const [resolvedSrc, setResolvedSrc] = React.useState(src)
+  const [fallbackFileUrl, setFallbackFileUrl] = React.useState<string | null>(null)
   const [hasError, setHasError] = React.useState(false)
+  const [didTryRawDataUrl, setDidTryRawDataUrl] = React.useState(false)
+  const [didTryFallbackFile, setDidTryFallbackFile] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!fallbackFile) {
+      setFallbackFileUrl(null)
+      return
+    }
+
+    const objectUrl = URL.createObjectURL(fallbackFile)
+    setFallbackFileUrl(objectUrl)
+
+    return () => {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }, [fallbackFile])
 
   React.useEffect(() => {
     setHasError(false)
+    setDidTryRawDataUrl(false)
+    setDidTryFallbackFile(false)
     setResolvedSrc(src)
 
     if (!src || !src.startsWith("data:") || !src.includes(";base64,")) {
@@ -344,7 +409,21 @@ function PreviewImage({ src, label }: { src: string; label: string }) {
       src={resolvedSrc}
       alt={label}
       className="h-full w-full object-contain"
-      onError={() => setHasError(true)}
+      onError={() => {
+        if (!didTryRawDataUrl && resolvedSrc !== src && src) {
+          setDidTryRawDataUrl(true)
+          setResolvedSrc(src)
+          return
+        }
+
+        if (!didTryFallbackFile && fallbackFileUrl && resolvedSrc !== fallbackFileUrl) {
+          setDidTryFallbackFile(true)
+          setResolvedSrc(fallbackFileUrl)
+          return
+        }
+
+        setHasError(true)
+      }}
     />
   )
 }
@@ -426,6 +505,12 @@ export function BookingFormDialog({
   const [sampleErrorMessage, setSampleErrorMessage] = React.useState<
     string | null
   >(null)
+  const [sampleErrorDetails, setSampleErrorDetails] =
+    React.useState<SampleErrorDetails | null>(null)
+  const [lastDocumentScan, setLastDocumentScan] = React.useState<{
+    documentType: OpenAiDocumentType
+    source: DocumentScanSource
+  } | null>(null)
 
   const passportUploadInputRef = React.useRef<HTMLInputElement>(null)
   const eidFrontUploadInputRef = React.useRef<HTMLInputElement>(null)
@@ -455,6 +540,8 @@ export function BookingFormDialog({
       setSaveErrorMessage(null)
       setSampleSuccessMessage(null)
       setSampleErrorMessage(null)
+      setSampleErrorDetails(null)
+      setLastDocumentScan(null)
     }
   }, [open, sourcePatients])
 
@@ -522,11 +609,17 @@ export function BookingFormDialog({
       setSampleErrorMessage(
         "Camera capture is not supported on this device. Use a desktop/laptop upload."
       )
+      setSampleErrorDetails({
+        reason: "unsupported_file_type",
+        retryable: false,
+        errorId: null,
+      })
       return false
     }
 
     setIsRequestingCameraPermission(true)
     setSampleErrorMessage(null)
+    setSampleErrorDetails(null)
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -540,6 +633,11 @@ export function BookingFormDialog({
       setSampleErrorMessage(
         "Camera permission is required. Please allow camera access and try again."
       )
+      setSampleErrorDetails({
+        reason: "validation_failed",
+        retryable: true,
+        errorId: null,
+      })
       return false
     } finally {
       setIsRequestingCameraPermission(false)
@@ -575,21 +673,38 @@ export function BookingFormDialog({
   )
 
   const handleProcessDocument = React.useCallback(
-    async (file: File | null, documentType: OpenAiDocumentType) => {
+    async (
+      file: File | null,
+      documentType: OpenAiDocumentType,
+      source: DocumentScanSource
+    ) => {
       if (!file) return
+
+      setLastDocumentScan({ documentType, source })
 
       if (!file.type.startsWith("image/")) {
         setSampleErrorMessage("Only image files are supported.")
+        setSampleErrorDetails({
+          reason: "unsupported_file_type",
+          retryable: false,
+          errorId: null,
+        })
         return
       }
 
       if (file.size > 8 * 1024 * 1024) {
         setSampleErrorMessage("Image is too large. Maximum allowed size is 8MB.")
+        setSampleErrorDetails({
+          reason: "file_too_large",
+          retryable: false,
+          errorId: null,
+        })
         return
       }
 
       setSampleErrorMessage(null)
       setSampleSuccessMessage(null)
+      setSampleErrorDetails(null)
       setProcessingDocumentType(documentType)
 
       try {
@@ -614,6 +729,11 @@ export function BookingFormDialog({
             setSampleErrorMessage(
               "Emirates ID must start with 784. Please recapture or upload a valid EID front."
             )
+            setSampleErrorDetails({
+              reason: "validation_failed",
+              retryable: true,
+              errorId: null,
+            })
             return
           }
           setEidFrontDocument(normalizedDocument)
@@ -625,16 +745,82 @@ export function BookingFormDialog({
           setSampleErrorMessage(
             "Document processed with low confidence. Please recapture for better clarity."
           )
+          setSampleErrorDetails({
+            reason: "document_not_clear",
+            retryable: true,
+            errorId: null,
+          })
         }
       } catch (error) {
         clearProcessedDocument(documentType)
-        setSampleErrorMessage(getApiErrorMessage(error))
+        const details = getDocumentProcessingErrorDetails(error)
+        setSampleErrorMessage(details.message || getApiErrorMessage(error))
+        setSampleErrorDetails(details)
       } finally {
         setProcessingDocumentType(null)
       }
     },
     [clearProcessedDocument]
   )
+
+  const triggerDocumentInput = React.useCallback(
+    async (documentType: OpenAiDocumentType, source: DocumentScanSource) => {
+      if (source === "capture") {
+        if (documentType === "PASSPORT") {
+          await openCaptureInput(passportCaptureInputRef)
+          return
+        }
+
+        if (documentType === "EID_FRONT") {
+          await openCaptureInput(eidFrontCaptureInputRef)
+          return
+        }
+
+        await openCaptureInput(eidBackCaptureInputRef)
+        return
+      }
+
+      if (documentType === "PASSPORT") {
+        passportUploadInputRef.current?.click()
+        return
+      }
+
+      if (documentType === "EID_FRONT") {
+        eidFrontUploadInputRef.current?.click()
+        return
+      }
+
+      eidBackUploadInputRef.current?.click()
+    },
+    [openCaptureInput]
+  )
+
+  const handleRetryLastDocumentScan = React.useCallback(() => {
+    if (!lastDocumentScan || isDocumentProcessing) return
+    void triggerDocumentInput(lastDocumentScan.documentType, lastDocumentScan.source)
+  }, [isDocumentProcessing, lastDocumentScan, triggerDocumentInput])
+
+  const sampleIssueReportHref = React.useMemo(() => {
+    if (!sampleErrorMessage) return null
+
+    const bookingRef = booking?.bookingId || booking?.apiBookingId || "Unknown Booking"
+    const errorId = sampleErrorDetails?.errorId || "NA"
+    const subject = encodeURIComponent(
+      `DarDoc Sample Collection Issue - ${String(bookingRef)}`
+    )
+    const body = encodeURIComponent(
+      [
+        `Booking: ${String(bookingRef)}`,
+        `Error ID: ${errorId}`,
+        `Reason: ${sampleErrorDetails?.reason || "unknown"}`,
+        `Message: ${sampleErrorMessage}`,
+        "",
+        "Please investigate this issue.",
+      ].join("\n")
+    )
+
+    return `mailto:support@dardoc.com?subject=${subject}&body=${body}`
+  }, [booking?.apiBookingId, booking?.bookingId, sampleErrorDetails, sampleErrorMessage])
 
   const handlePatientFieldChange = React.useCallback(
     (
@@ -656,6 +842,7 @@ export function BookingFormDialog({
       setSaveErrorMessage(null)
       setSaveSuccessMessage(null)
       setSampleErrorMessage(null)
+      setSampleErrorDetails(null)
       setSampleSuccessMessage(null)
     },
     []
@@ -667,12 +854,14 @@ export function BookingFormDialog({
     if (patientUpdates.length === 0) {
       setSaveSuccessMessage("No patient changes to save.")
       setSaveErrorMessage(null)
+      void triggerHapticFeedback("light")
       return
     }
 
     if (!onSavePatientUpdates) {
       setSaveSuccessMessage("Patient details are ready for submission.")
       setSaveErrorMessage(null)
+      void triggerHapticFeedback("light")
       return
     }
 
@@ -687,8 +876,10 @@ export function BookingFormDialog({
       })
 
       setSaveSuccessMessage("Patient details updated successfully.")
+      void triggerHapticFeedback("success")
     } catch (error) {
       setSaveErrorMessage(getApiErrorMessage(error))
+      void triggerHapticFeedback("error")
     } finally {
       setIsSavingPatients(false)
     }
@@ -701,6 +892,7 @@ export function BookingFormDialog({
 
     if (!isSampleDocumentReady || !submissionDocumentFile) {
       setSampleSuccessMessage(null)
+      setSampleErrorDetails(null)
       if (selectedDocumentType === "passport") {
         setSampleErrorMessage(
           isCaptureDevice
@@ -714,39 +906,64 @@ export function BookingFormDialog({
             : "Upload EID front and back side before submitting."
         )
       }
+      void triggerHapticFeedback("warning")
       return
     }
 
     if (!hasAllNationalIds) {
       setSampleSuccessMessage(null)
+      setSampleErrorDetails(null)
       setSampleErrorMessage(
         `National ID is required for all patients. Missing: ${missingNationalIdPatientIds.join(
           ", "
         )}`
       )
+      void triggerHapticFeedback("warning")
       return
     }
 
     if (!onSubmitSampleCollection) {
       setSampleErrorMessage(null)
+      setSampleErrorDetails(null)
       setSampleSuccessMessage("Sample collection request prepared successfully.")
+      void triggerHapticFeedback("light")
       return
     }
 
     setIsSubmittingSample(true)
     setSampleSuccessMessage(null)
     setSampleErrorMessage(null)
+    setSampleErrorDetails(null)
 
     try {
-      await onSubmitSampleCollection({
+      const result = await onSubmitSampleCollection({
         booking,
         updates: patientUpdates,
         idDocumentFile: submissionDocumentFile,
       })
 
-      setSampleSuccessMessage("Sample collection submitted successfully.")
+      if (result?.syncState === "pending") {
+        setSampleSuccessMessage(
+          "Sample submission saved offline. It will sync automatically when your connection is back."
+        )
+        void triggerHapticFeedback("warning")
+      } else if (result?.syncState === "failed") {
+        setSampleSuccessMessage(
+          "Sample submission saved with sync failure state. Please retry sync from bookings page."
+        )
+        void triggerHapticFeedback("warning")
+      } else {
+        setSampleSuccessMessage("Sample collection submitted successfully.")
+        void triggerHapticFeedback("success")
+      }
     } catch (error) {
       setSampleErrorMessage(getSampleSubmissionError(error))
+      setSampleErrorDetails({
+        reason: getApiErrorCode(error),
+        retryable: true,
+        errorId: getApiErrorId(error),
+      })
+      void triggerHapticFeedback("error")
     } finally {
       setIsSubmittingSample(false)
     }
@@ -801,7 +1018,7 @@ export function BookingFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[100dvh] max-h-[100dvh] w-screen max-w-none overflow-hidden rounded-none border-0 p-0 [&>button]:hidden sm:h-[95dvh] sm:max-h-[95dvh] sm:w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-1rem)] sm:rounded-xl sm:border sm:p-0 md:h-auto md:max-h-[620px] md:max-w-[980px] lg:max-w-[1120px]">
+      <DialogContent className="bottom-0 left-0 top-auto h-[94dvh] max-h-[94dvh] w-screen max-w-none translate-x-0 translate-y-0 overflow-hidden rounded-t-2xl rounded-b-none border border-border/70 p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom [&>button]:hidden sm:h-[95dvh] sm:max-h-[95dvh] sm:w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-1rem)] sm:rounded-xl sm:border sm:p-0 md:bottom-auto md:left-[50%] md:top-[50%] md:h-auto md:max-h-[620px] md:max-w-[980px] md:translate-x-[-50%] md:translate-y-[-50%] lg:max-w-[1120px]">
         <DialogTitle className="sr-only">Booking Details</DialogTitle>
         <DialogDescription className="sr-only">
           Review booking details, update patient information, and submit sample collection.
@@ -1166,7 +1383,7 @@ export function BookingFormDialog({
                         onChange={async (event) => {
                           const input = event.currentTarget
                           const file = input.files?.[0] ?? null
-                          await handleProcessDocument(file, "PASSPORT")
+                          await handleProcessDocument(file, "PASSPORT", "upload")
                           input.value = ""
                         }}
                       />
@@ -1179,7 +1396,7 @@ export function BookingFormDialog({
                         onChange={async (event) => {
                           const input = event.currentTarget
                           const file = input.files?.[0] ?? null
-                          await handleProcessDocument(file, "EID_FRONT")
+                          await handleProcessDocument(file, "EID_FRONT", "upload")
                           input.value = ""
                         }}
                       />
@@ -1192,7 +1409,7 @@ export function BookingFormDialog({
                         onChange={async (event) => {
                           const input = event.currentTarget
                           const file = input.files?.[0] ?? null
-                          await handleProcessDocument(file, "EID_BACK")
+                          await handleProcessDocument(file, "EID_BACK", "upload")
                           input.value = ""
                         }}
                       />
@@ -1206,7 +1423,7 @@ export function BookingFormDialog({
                         onChange={async (event) => {
                           const input = event.currentTarget
                           const file = input.files?.[0] ?? null
-                          await handleProcessDocument(file, "PASSPORT")
+                          await handleProcessDocument(file, "PASSPORT", "capture")
                           input.value = ""
                         }}
                       />
@@ -1220,7 +1437,7 @@ export function BookingFormDialog({
                         onChange={async (event) => {
                           const input = event.currentTarget
                           const file = input.files?.[0] ?? null
-                          await handleProcessDocument(file, "EID_FRONT")
+                          await handleProcessDocument(file, "EID_FRONT", "capture")
                           input.value = ""
                         }}
                       />
@@ -1234,7 +1451,7 @@ export function BookingFormDialog({
                         onChange={async (event) => {
                           const input = event.currentTarget
                           const file = input.files?.[0] ?? null
-                          await handleProcessDocument(file, "EID_BACK")
+                          await handleProcessDocument(file, "EID_BACK", "capture")
                           input.value = ""
                         }}
                       />
@@ -1262,6 +1479,7 @@ export function BookingFormDialog({
                                 onClick={() => {
                                   setSelectedDocumentType("passport")
                                   setSampleErrorMessage(null)
+                                  setSampleErrorDetails(null)
                                   setSampleSuccessMessage(null)
                                 }}
                               >
@@ -1276,6 +1494,7 @@ export function BookingFormDialog({
                                 onClick={() => {
                                   setSelectedDocumentType("eid")
                                   setSampleErrorMessage(null)
+                                  setSampleErrorDetails(null)
                                   setSampleSuccessMessage(null)
                                 }}
                               >
@@ -1501,6 +1720,7 @@ export function BookingFormDialog({
                                     <PreviewImage
                                       src={passportFrontDocument.previewDataUrl}
                                       label="Passport front preview"
+                                      fallbackFile={passportFrontDocument.file}
                                     />
                                   </div>
                                   <div className="grid gap-2 rounded-md border p-2 text-xs sm:grid-cols-2">
@@ -1571,6 +1791,7 @@ export function BookingFormDialog({
                                         <PreviewImage
                                           src={eidFrontDocument.previewDataUrl}
                                           label="EID front preview"
+                                          fallbackFile={eidFrontDocument.file}
                                         />
                                       </div>
                                       <div className="grid gap-1 rounded-md border p-2 text-xs">
@@ -1606,6 +1827,7 @@ export function BookingFormDialog({
                                         <PreviewImage
                                           src={eidBackDocument.previewDataUrl}
                                           label="EID back preview"
+                                          fallbackFile={eidBackDocument.file}
                                         />
                                       </div>
                                     </div>
@@ -1623,8 +1845,37 @@ export function BookingFormDialog({
                           ) : null}
 
                           {sampleErrorMessage ? (
-                            <div className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-600 dark:text-rose-300">
-                              {sampleErrorMessage}
+                            <div className="space-y-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-600 dark:text-rose-300">
+                              <p>{sampleErrorMessage}</p>
+                              {sampleErrorDetails?.reason ? (
+                                <p className="text-[11px]">
+                                  Reason: {formatDocumentErrorReason(sampleErrorDetails.reason)}
+                                </p>
+                              ) : null}
+                              {sampleErrorDetails?.errorId ? (
+                                <p className="text-[11px]">
+                                  Error ID: {sampleErrorDetails.errorId}
+                                </p>
+                              ) : null}
+                              <div className="flex flex-wrap gap-2">
+                                {sampleErrorDetails?.retryable && lastDocumentScan ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={isDocumentProcessing}
+                                    onClick={handleRetryLastDocumentScan}
+                                  >
+                                    <RotateCcw className="size-4" />
+                                    Retry Scan
+                                  </Button>
+                                ) : null}
+                                {sampleIssueReportHref ? (
+                                  <Button type="button" variant="ghost" size="sm" asChild>
+                                    <a href={sampleIssueReportHref}>Report issue</a>
+                                  </Button>
+                                ) : null}
+                              </div>
                             </div>
                           ) : null}
 
@@ -1661,9 +1912,44 @@ export function BookingFormDialog({
                 </section>
               ) : null}
 
-              <div className="flex justify-end border-t pt-4">
+              <div className="hidden justify-end border-t pt-4 md:flex">
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                   Close
+                </Button>
+              </div>
+            </div>
+            <div className="safe-area-bottom border-t border-border/70 bg-background/95 p-3 md:hidden">
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mobile-touch-target h-11 rounded-xl"
+                  disabled={isSavingPatients}
+                  onClick={() => {
+                    setActiveSection("patients")
+                    void handleSavePatients()
+                  }}
+                >
+                  {isSavingPatients ? "Saving..." : "Save"}
+                </Button>
+                <Button
+                  type="button"
+                  className="mobile-touch-target h-11 rounded-xl"
+                  disabled={isSubmittingSample || isDocumentProcessing}
+                  onClick={() => {
+                    if (activeSection !== "sample" || !showSampleCollection) {
+                      setActiveSection("sample")
+                      setShowSampleCollection(true)
+                      return
+                    }
+                    void handleSampleSubmit()
+                  }}
+                >
+                  {isSubmittingSample
+                    ? "Submitting..."
+                    : activeSection !== "sample" || !showSampleCollection
+                    ? "Submit Sample"
+                    : "Submit Sample"}
                 </Button>
               </div>
             </div>

@@ -3,6 +3,7 @@ import { ClerkProvider } from "@clerk/nextjs"
 import { NetworkStatusBanner } from "@/components/network-status-banner"
 import { InstallPwaPrompt } from "@/components/pwa/install-pwa-prompt"
 import { PwaServiceWorker } from "@/components/pwa/pwa-service-worker"
+import { NativeMobileBridge } from "@/components/capacitor/native-mobile-bridge"
 import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
 
@@ -67,6 +68,7 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             <PwaServiceWorker />
+            <NativeMobileBridge />
             <NetworkStatusBanner />
             {children}
             <InstallPwaPrompt />

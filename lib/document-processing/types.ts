@@ -26,8 +26,23 @@ export type ProcessedDocumentPayload = {
   confidenceScore: number
 }
 
+export type ProcessedDocumentErrorReason =
+  | "invalid_document_type"
+  | "file_required"
+  | "unsupported_file_type"
+  | "file_too_large"
+  | "document_not_configured"
+  | "openai_request_failed"
+  | "invalid_openai_response"
+  | "validation_failed"
+  | "timeout"
+  | "document_not_clear"
+
 export type ProcessedDocumentErrorPayload = {
   error: true
   message: string
   confidenceScore: number
+  reason?: ProcessedDocumentErrorReason
+  retryable?: boolean
+  errorId?: string
 }

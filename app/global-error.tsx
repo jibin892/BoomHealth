@@ -4,6 +4,7 @@ import { useEffect } from "react"
 
 import { PageErrorState } from "@/components/ui/page-error-state"
 import { getErrorPresentation } from "@/lib/error-presentation"
+import { captureObservedError } from "@/lib/observability/telemetry"
 
 type GlobalErrorProps = {
   error: Error & { digest?: string }
@@ -13,9 +14,26 @@ type GlobalErrorProps = {
 export default function GlobalError({ error, reset }: GlobalErrorProps) {
   useEffect(() => {
     console.error(error)
+    captureObservedError(error, {
+      area: "global_error_boundary",
+      metadata: {
+        digest: error.digest,
+      },
+    })
   }, [error])
 
   const errorPresentation = getErrorPresentation(error)
+  const reportIssueHref = `mailto:support@dardoc.com?subject=${encodeURIComponent(
+    "DarDoc Global Error"
+  )}&body=${encodeURIComponent(
+    [
+      `Code: ${errorPresentation.code || "NA"}`,
+      `Error ID: ${errorPresentation.errorId || "NA"}`,
+      `Message: ${errorPresentation.description}`,
+      "",
+      "Please investigate this issue.",
+    ].join("\n")
+  )}`
 
   return (
     <html lang="en">
@@ -27,6 +45,9 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
               description={errorPresentation.description}
               onRetry={reset}
               isNetworkError={errorPresentation.isNetworkError}
+              errorCode={errorPresentation.code}
+              errorId={errorPresentation.errorId}
+              reportIssueHref={reportIssueHref}
             />
           </div>
         </main>

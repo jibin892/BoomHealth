@@ -12,6 +12,9 @@ type PageErrorStateProps = {
   isRetrying?: boolean
   isNetworkError?: boolean
   className?: string
+  errorId?: string | null
+  errorCode?: string | null
+  reportIssueHref?: string | null
 }
 
 export function PageErrorState({
@@ -21,6 +24,9 @@ export function PageErrorState({
   isRetrying = false,
   isNetworkError = false,
   className,
+  errorId,
+  errorCode,
+  reportIssueHref,
 }: PageErrorStateProps) {
   return (
     <div
@@ -36,6 +42,22 @@ export function PageErrorState({
       )}
       <h3 className="text-base font-semibold">{title}</h3>
       <p className="text-muted-foreground mt-1 max-w-md text-sm">{description}</p>
+      {errorCode || errorId ? (
+        <p className="text-muted-foreground mt-1 text-xs">
+          {errorCode ? `Code: ${errorCode}` : null}
+          {errorCode && errorId ? " • " : null}
+          {errorId ? `Error ID: ${errorId}` : null}
+        </p>
+      ) : null}
+      {reportIssueHref ? (
+        <Button
+          asChild
+          variant="ghost"
+          className="mobile-touch-target mt-2 h-9 rounded-xl px-3 text-xs"
+        >
+          <a href={reportIssueHref}>Report issue</a>
+        </Button>
+      ) : null}
       {onRetry ? (
         <Button
           variant="outline"

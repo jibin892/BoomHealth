@@ -5,6 +5,8 @@ type ErrorPresentation = {
   title: string
   description: string
   isNetworkError: boolean
+  code: string | null
+  errorId: string | null
 }
 
 const GENERIC_ERROR_MESSAGES = new Set([
@@ -34,6 +36,8 @@ export function getErrorPresentation(error: unknown): ErrorPresentation {
         ? "No internet connection. Please check Wi-Fi or mobile data and retry."
         : "Unable to reach the server. Check your connection and try again.",
       isNetworkError: true,
+      code: apiError.code || null,
+      errorId: apiError.errorId || null,
     }
   }
 
@@ -44,6 +48,8 @@ export function getErrorPresentation(error: unknown): ErrorPresentation {
       title: "Unable to Load Page",
       description: message,
       isNetworkError: false,
+      code: apiError.code || null,
+      errorId: apiError.errorId || null,
     }
   }
 
@@ -52,6 +58,8 @@ export function getErrorPresentation(error: unknown): ErrorPresentation {
       title: "Unable to Load Page",
       description: `Request failed with status ${apiError.status}. Please retry.`,
       isNetworkError: false,
+      code: apiError.code || null,
+      errorId: apiError.errorId || null,
     }
   }
 
@@ -59,6 +67,7 @@ export function getErrorPresentation(error: unknown): ErrorPresentation {
     title: "Unable to Load Page",
     description: "Request could not be completed. Please retry.",
     isNetworkError: false,
+    code: apiError.code || null,
+    errorId: apiError.errorId || null,
   }
 }
-

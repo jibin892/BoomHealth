@@ -1,23 +1,32 @@
 import { NextResponse } from "next/server"
+import { randomUUID } from "node:crypto"
 
 import {
   OPENAI_DOCUMENT_TYPES,
   type OpenAiDocumentType,
   type ProcessedDocumentErrorPayload,
+  type ProcessedDocumentErrorReason,
   type ProcessedDocumentPayload,
 } from "@/lib/document-processing/types"
+import { captureObservedError, trackApiTelemetry } from "@/lib/observability/telemetry"
 
 const OPENAI_RESPONSES_API_URL = "https://api.openai.com/v1/responses"
-const REQUEST_TIMEOUT_MS = 30_000
+const REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_DOCUMENT_TIMEOUT_MS || 18_000)
 const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024
-const OPENAI_DOCUMENT_MODEL = process.env.OPENAI_DOCUMENT_MODEL || "gpt-4.1"
+const OPENAI_DOCUMENT_MODEL = process.env.OPENAI_DOCUMENT_MODEL || "gpt-4.1-mini"
 const MIN_CONFIDENCE_UNSUPPORTED = 0.35
 const MIN_CONFIDENCE_PASSPORT = 0.5
 const MIN_CONFIDENCE_EID_FRONT = 0.5
 const MIN_CONFIDENCE_EID_BACK = 0.45
 
-// TEMP: hardcoded for local/dev testing only. Remove before production.
-const HARDCODED_DEV_OPENAI_API_KEY = ""
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+])
 
 const DEFAULT_EXTRACTED_DATA = {
   fullName: "",
@@ -80,12 +89,22 @@ type OpenAiResponse = {
 
 function toError(
   message: string,
-  confidenceScore = 0.45
+  options?: {
+    confidenceScore?: number
+    reason?: ProcessedDocumentErrorReason
+    retryable?: boolean
+    errorId?: string
+  }
 ): ProcessedDocumentErrorPayload {
   return {
     error: true,
     message,
-    confidenceScore,
+    confidenceScore: options?.confidenceScore ?? 0.45,
+    ...(options?.reason ? { reason: options.reason } : {}),
+    ...(typeof options?.retryable === "boolean"
+      ? { retryable: options.retryable }
+      : {}),
+    errorId: options?.errorId || randomUUID(),
   }
 }
 
@@ -205,6 +224,41 @@ function isLikelyImageBase64(value: string) {
   } catch {
     return false
   }
+}
+
+function isSupportedImageMimeType(mimeType: string) {
+  return ALLOWED_IMAGE_MIME_TYPES.has(mimeType.trim().toLowerCase())
+}
+
+function hasSupportedImageSignature(buffer: Buffer) {
+  if (buffer.length < 12) return false
+
+  const isJpeg =
+    buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff
+  const isPng =
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  const isWebp =
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+
+  // HEIC/HEIF use ISOBMFF container with ftyp box markers.
+  const ftyp = buffer.toString("ascii", 4, 12).toLowerCase()
+  const isHeifContainer = ftyp.startsWith("ftyp")
+  const brand = buffer.toString("ascii", 8, 12).toLowerCase()
+  const isHeifBrand = ["heic", "heix", "hevc", "hevx", "mif1", "msf1"].includes(
+    brand
+  )
+
+  return isJpeg || isPng || isWebp || (isHeifContainer && isHeifBrand)
 }
 
 function toNormalizedPayload(
@@ -367,44 +421,107 @@ function buildInstructionPrompt(documentType: OpenAiDocumentType) {
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now()
+
+  const respond = (
+    payload: ProcessedDocumentPayload | ProcessedDocumentErrorPayload,
+    status: number,
+    options?: {
+      success?: boolean
+      errorCode?: string
+      documentType?: string
+    }
+  ) => {
+    trackApiTelemetry({
+      name: "api_document_process",
+      durationMs: Date.now() - startedAt,
+      success: Boolean(options?.success),
+      statusCode: status,
+      errorCode: options?.errorCode,
+      metadata: options?.documentType
+        ? {
+            documentType: options.documentType,
+          }
+        : undefined,
+    })
+
+    return NextResponse.json(payload, { status })
+  }
+
   try {
     const formData = await request.formData()
 
     const documentTypeValue = String(formData.get("documentType") || "").trim()
     if (!isDocumentType(documentTypeValue)) {
-      return NextResponse.json(toError("Invalid document type."), { status: 400 })
+      return respond(
+        toError("Invalid document type.", {
+          reason: "invalid_document_type",
+          retryable: false,
+        }),
+        400,
+        { errorCode: "invalid_document_type" }
+      )
     }
 
     const fileEntry = formData.get("file")
     if (!(fileEntry instanceof File)) {
-      return NextResponse.json(toError("Image file is required."), { status: 400 })
-    }
-
-    if (!fileEntry.type.startsWith("image/")) {
-      return NextResponse.json(toError("Only image files are supported."), {
-        status: 415,
-      })
-    }
-
-    if (fileEntry.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json(
-        toError("Image is too large. Maximum allowed size is 8MB."),
-        { status: 413 }
+      return respond(
+        toError("Image file is required.", {
+          reason: "file_required",
+          retryable: false,
+        }),
+        400,
+        { errorCode: "file_required", documentType: documentTypeValue }
       )
     }
 
-    const openAiApiKey =
-      process.env.OPENAI_API_KEY ||
-      process.env.OPENAI_API_KEY_DEV ||
-      HARDCODED_DEV_OPENAI_API_KEY
+    if (!isSupportedImageMimeType(fileEntry.type)) {
+      return respond(
+        toError("Only JPG, PNG, WEBP, HEIC, and HEIF images are supported.", {
+          reason: "unsupported_file_type",
+          retryable: false,
+        }),
+        415,
+        { errorCode: "unsupported_file_type", documentType: documentTypeValue }
+      )
+    }
+
+    if (fileEntry.size > MAX_FILE_SIZE_BYTES) {
+      return respond(
+        toError("Image is too large. Maximum allowed size is 8MB.", {
+          reason: "file_too_large",
+          retryable: false,
+        }),
+        413,
+        { errorCode: "file_too_large", documentType: documentTypeValue }
+      )
+    }
+
+    const openAiApiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_DEV
 
     if (!openAiApiKey) {
-      return NextResponse.json(toError("Document processing is not configured."), {
-        status: 500,
-      })
+      return respond(
+        toError("Document processing is not configured.", {
+          reason: "document_not_configured",
+          retryable: false,
+        }),
+        500,
+        { errorCode: "document_not_configured", documentType: documentTypeValue }
+      )
     }
 
     const buffer = Buffer.from(await fileEntry.arrayBuffer())
+    if (!hasSupportedImageSignature(buffer)) {
+      return respond(
+        toError("Uploaded file is not a valid supported image.", {
+          reason: "unsupported_file_type",
+          retryable: false,
+        }),
+        415,
+        { errorCode: "unsupported_file_type", documentType: documentTypeValue }
+      )
+    }
+
     const base64Image = buffer.toString("base64")
     const imageDataUrl = `data:${fileEntry.type};base64,${base64Image}`
 
@@ -457,45 +574,101 @@ export async function POST(request: Request) {
         ? `Document processing failed (${response.status}).`
         : "Document not clear. Please recapture."
 
-      return NextResponse.json(toError(message), { status: response.status })
+      const retryable = response.status >= 500 || response.status === 429
+      return respond(
+        toError(message, {
+          reason: "openai_request_failed",
+          retryable,
+        }),
+        response.status,
+        { errorCode: "openai_request_failed", documentType: documentTypeValue }
+      )
     }
 
     const responsePayload = (await response.json()) as OpenAiResponse
     const outputText = extractOutputText(responsePayload)
 
     if (!outputText) {
-      return NextResponse.json(
-        toError("Document not clear. Please recapture.", 0.5),
-        { status: 422 }
+      return respond(
+        toError("Document not clear. Please recapture.", {
+          confidenceScore: 0.5,
+          reason: "invalid_openai_response",
+          retryable: true,
+        }),
+        422,
+        { errorCode: "invalid_openai_response", documentType: documentTypeValue }
       )
     }
 
-    const parsed = parseJsonResponse(outputText)
+    let parsed: unknown
+    try {
+      parsed = parseJsonResponse(outputText)
+    } catch {
+      return respond(
+        toError("Invalid AI response. Please retry scanning.", {
+          reason: "invalid_openai_response",
+          retryable: true,
+        }),
+        422,
+        { errorCode: "invalid_openai_response", documentType: documentTypeValue }
+      )
+    }
+
     const normalized = toNormalizedPayload(parsed, documentTypeValue)
 
     if (!normalized) {
-      return NextResponse.json(
-        toError("Document not clear. Please recapture.", 0.45),
-        { status: 422 }
+      return respond(
+        toError("Document not clear. Please recapture.", {
+          confidenceScore: 0.45,
+          reason: "document_not_clear",
+          retryable: true,
+        }),
+        422,
+        { errorCode: "document_not_clear", documentType: documentTypeValue }
       )
     }
 
     const validationError = getDocumentValidationError(normalized, documentTypeValue)
     if (validationError) {
-      return NextResponse.json(toError(validationError, normalized.confidenceScore), {
-        status: 422,
-      })
+      return respond(
+        toError(validationError, {
+          confidenceScore: normalized.confidenceScore,
+          reason: "validation_failed",
+          retryable: true,
+        }),
+        422,
+        { errorCode: "validation_failed", documentType: documentTypeValue }
+      )
     }
 
-    return NextResponse.json(normalized)
+    return respond(normalized, 200, {
+      success: true,
+      documentType: documentTypeValue,
+    })
   } catch (error) {
     const message =
       error instanceof Error && error.name === "AbortError"
         ? "Document processing timed out. Please try again."
         : "Document not clear. Please recapture."
 
-    return NextResponse.json(toError(message), {
-      status: 500,
+    captureObservedError(error, {
+      area: "api_document_process",
     })
+
+    return respond(
+      toError(message, {
+        reason: error instanceof Error && error.name === "AbortError"
+          ? "timeout"
+          : "document_not_clear",
+        retryable: true,
+      }),
+      500,
+      {
+        errorCode:
+          error instanceof Error && error.name === "AbortError"
+            ? "timeout"
+            : "document_not_clear",
+      }
+    )
   }
 }

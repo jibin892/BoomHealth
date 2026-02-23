@@ -2,6 +2,7 @@ import { apiClient } from "@/lib/api/client"
 import { getCollectorPartyId } from "@/lib/api/config"
 import { collectorBookingEndpoints } from "@/lib/api/endpoints"
 import { toApiRequestError } from "@/lib/api/errors"
+import { captureObservedError } from "@/lib/observability/telemetry"
 import type {
   CollectorBookingItem,
   CollectorBookingsQuery,
@@ -187,6 +188,16 @@ async function fetchBookings(
       return buildFallbackCurrentBookingsResponse(collectorPartyId, args)
     }
 
+    captureObservedError(apiError, {
+      area: "collector_bookings_fetch",
+      metadata: {
+        bucket,
+        collectorPartyId,
+        code: apiError.code,
+        status: apiError.status,
+      },
+    })
+
     throw apiError
   }
 }
@@ -223,7 +234,17 @@ export async function updateCollectorBookingPatients({
 
     return response.data
   } catch (error) {
-    throw toApiRequestError(error)
+    const apiError = toApiRequestError(error)
+    captureObservedError(apiError, {
+      area: "collector_booking_patients_update",
+      metadata: {
+        bookingId: String(bookingId),
+        collectorPartyId: collectorPartyId || getCollectorPartyId(),
+        code: apiError.code,
+        status: apiError.status,
+      },
+    })
+    throw apiError
   }
 }
 
@@ -253,6 +274,16 @@ export async function markCollectorBookingSampleCollected({
 
     return response.data
   } catch (error) {
-    throw toApiRequestError(error)
+    const apiError = toApiRequestError(error)
+    captureObservedError(apiError, {
+      area: "collector_booking_sample_collected",
+      metadata: {
+        bookingId: String(bookingId),
+        collectorPartyId: collectorPartyId || getCollectorPartyId(),
+        code: apiError.code,
+        status: apiError.status,
+      },
+    })
+    throw apiError
   }
 }
