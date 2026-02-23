@@ -49,9 +49,15 @@ function buildBookingsParams({
   }
 }
 
-const FALLBACK_STATUSES: CollectorBookingStatus[] = [
+const FALLBACK_CURRENT_STATUSES: CollectorBookingStatus[] = [
   "CREATED",
   "ACTIVE",
+  "FULFILLED",
+]
+
+const FALLBACK_PAST_STATUSES: CollectorBookingStatus[] = [
+  "FULFILLED",
+  "CANCELLED",
   "FULFILLED",
 ]
 
@@ -68,14 +74,23 @@ const FALLBACK_PATIENT_NAMES = [
   "Zayed Khan",
 ]
 
-function createFallbackBookingItem(index: number): CollectorBookingItem {
+function createFallbackBookingItem(
+  index: number,
+  bucket: "current" | "past"
+): CollectorBookingItem {
   const now = Date.now()
-  const startAt = new Date(now + index * 30 * 60 * 1000)
+  const startAt =
+    bucket === "current"
+      ? new Date(now + index * 30 * 60 * 1000)
+      : new Date(now - (index + 1) * 12 * 60 * 60 * 1000)
   const endAt = new Date(startAt.getTime() + 45 * 60 * 1000)
   const createdAt = new Date(startAt.getTime() - 2 * 60 * 60 * 1000)
-  const status = FALLBACK_STATUSES[index % FALLBACK_STATUSES.length]
+  const status =
+    bucket === "current"
+      ? FALLBACK_CURRENT_STATUSES[index % FALLBACK_CURRENT_STATUSES.length]
+      : FALLBACK_PAST_STATUSES[index % FALLBACK_PAST_STATUSES.length]
   const amountExpected = 9_500 + (index % 8) * 2_500
-  const bookingId = 700_000 + index
+  const bookingId = (bucket === "current" ? 700_000 : 710_000) + index
   const fallbackLat = 25.2048 + index * 0.002
   const fallbackLng = 55.2708 + index * 0.002
 
@@ -92,7 +107,12 @@ function createFallbackBookingItem(index: number): CollectorBookingItem {
     start_at: startAt.toISOString(),
     end_at: endAt.toISOString(),
     created_at: createdAt.toISOString(),
-    order_status: status === "FULFILLED" ? "COMPLETED" : "ACTIVE",
+    order_status:
+      status === "FULFILLED"
+        ? "COMPLETED"
+        : status === "CANCELLED"
+          ? "CANCELLED"
+          : "ACTIVE",
     amount_expected_aed_fils: amountExpected,
     amount_captured_aed_fils: status === "FULFILLED" ? amountExpected : 0,
     currency_expected: "AED",
@@ -112,13 +132,14 @@ function createFallbackBookingItem(index: number): CollectorBookingItem {
   }
 }
 
-function buildFallbackCurrentBookingsResponse(
+function buildFallbackBookingsResponse(
+  bucket: "current" | "past",
   collectorPartyId: string,
   query: CollectorBookingsQuery = {}
 ): CollectorBookingsResponse {
   const fallbackCount = 5
   const generatedItems = Array.from({ length: fallbackCount }, (_, index) =>
-    createFallbackBookingItem(index)
+    createFallbackBookingItem(index, bucket)
   )
 
   const beforeStartAtMs = query.beforeStartAt
@@ -147,7 +168,7 @@ function buildFallbackCurrentBookingsResponse(
       party_id: collectorPartyId,
       display_name: "BoomHealth Collector (Fallback)",
     },
-    bucket: "current",
+    bucket,
     items,
     next_before_start_at:
       filteredItems.length > safeLimit ? filteredItems[safeLimit - 1]?.start_at : null,
@@ -169,6 +190,13 @@ async function fetchBookings(
       params: buildBookingsParams(args),
     })
 
+    if (bucket === "past" && response.data.items.length === 0) {
+      console.warn(
+        "[collector-bookings] past bookings response empty; using fallback dummy data for testing."
+      )
+      return buildFallbackBookingsResponse("past", collectorPartyId, args)
+    }
+
     return response.data
   } catch (error) {
     const apiError = toApiRequestError(error)
@@ -185,7 +213,7 @@ async function fetchBookings(
           message: apiError.message,
         }
       )
-      return buildFallbackCurrentBookingsResponse(collectorPartyId, args)
+      return buildFallbackBookingsResponse("current", collectorPartyId, args)
     }
 
     captureObservedError(apiError, {
