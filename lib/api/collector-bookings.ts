@@ -22,6 +22,7 @@ type UpdateBookingPatientsArgs = {
   bookingId: string | number
   collectorPartyId?: string
   updates: UpdateBookingPatientsRequest["updates"]
+  croppedImagesBase64?: string[]
 }
 
 type MarkSampleCollectedArgs = {
@@ -242,6 +243,7 @@ export async function updateCollectorBookingPatients({
   bookingId,
   collectorPartyId,
   updates,
+  croppedImagesBase64,
 }: UpdateBookingPatientsArgs) {
   if (updates.length === 0) {
     throw toApiRequestError(new Error("At least one patient update is required"))
@@ -257,6 +259,9 @@ export async function updateCollectorBookingPatients({
       endpoint,
       {
         updates,
+        ...(croppedImagesBase64 !== undefined
+          ? { cropped_images_base64: croppedImagesBase64 }
+          : {}),
       }
     )
 

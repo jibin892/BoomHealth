@@ -22,7 +22,6 @@ import {
   getApiErrorCode,
   getApiErrorId,
   getApiErrorMessage,
-  getMissingPatientIds,
 } from "@/lib/api/errors"
 import type {
   DocumentExtractionData,
@@ -80,7 +79,8 @@ export type SaveBookingPatientsInput = {
 }
 
 export type SubmitSampleCollectionInput = SaveBookingPatientsInput & {
-  idDocumentFile: File
+  idDocumentFile?: File
+  croppedDocumentImageBase64List?: string[]
 }
 
 export type SubmitSampleCollectionResult = {
@@ -115,6 +115,7 @@ type DialogSection = "booking" | "patients" | "location" | "sample"
 type ProcessedImageDocument = {
   file: File
   previewDataUrl: string
+  croppedImageBase64: string
   extractedData: DocumentExtractionData
   validation: DocumentValidation
   confidenceScore: number
@@ -203,6 +204,32 @@ function buildPatientUpdates(
     .filter((item): item is BookingPatientUpdate => Boolean(item))
 }
 
+function mergeMissingNationalIdsFromDocument(
+  baseUpdates: BookingPatientUpdate[],
+  missingPatientIds: string[],
+  documentNumber: string
+) {
+  if (!documentNumber || missingPatientIds.length === 0) {
+    return baseUpdates
+  }
+
+  const updatesByPatientId = new Map(
+    baseUpdates.map((update) => [update.currentPatientId, { ...update }])
+  )
+
+  for (const patientId of missingPatientIds) {
+    const existing = updatesByPatientId.get(patientId) ?? {
+      currentPatientId: patientId,
+    }
+    updatesByPatientId.set(patientId, {
+      ...existing,
+      nationalId: documentNumber,
+    })
+  }
+
+  return Array.from(updatesByPatientId.values())
+}
+
 function getSourcePatients(booking: BookingTableRow | null) {
   return booking?.patients || []
 }
@@ -256,16 +283,12 @@ function formatReadableVisitDateTime(value?: string | null) {
 
 function getSampleSubmissionError(error: unknown) {
   const code = getApiErrorCode(error)
-  const message = getApiErrorMessage(error)
 
   if (code === "missing_patient_national_id") {
-    const missingIds = getMissingPatientIds(error)
-    if (missingIds.length > 0) {
-      return `${message} Missing: ${missingIds.join(", ")}`
-    }
+    return "Patient document number is required. For EID use EID number. For Passport use Document No."
   }
 
-  return message
+  return getApiErrorMessage(error)
 }
 
 function formatDocumentErrorReason(reason: string | null) {
@@ -572,6 +595,7 @@ export function BookingFormDialog({
   )
 
   const hasAllNationalIds = missingNationalIdPatientIds.length === 0
+  const requiresDocumentProof = !hasAllNationalIds
 
   const isSampleDocumentReady = React.useMemo(() => {
     if (selectedDocumentType === "passport") {
@@ -591,6 +615,22 @@ export function BookingFormDialog({
       ? passportFrontDocument?.file
       : eidFrontDocument?.file
   }, [eidFrontDocument, passportFrontDocument, selectedDocumentType])
+
+  const croppedDocumentImageBase64List = React.useMemo(() => {
+    const values =
+      selectedDocumentType === "passport"
+        ? [passportFrontDocument?.croppedImageBase64]
+        : [eidFrontDocument?.croppedImageBase64, eidBackDocument?.croppedImageBase64]
+
+    return values.filter(
+      (value): value is string => typeof value === "string" && value.trim().length > 0
+    )
+  }, [
+    eidBackDocument?.croppedImageBase64,
+    eidFrontDocument?.croppedImageBase64,
+    passportFrontDocument?.croppedImageBase64,
+    selectedDocumentType,
+  ])
 
   const requestCameraPermission = React.useCallback(async () => {
     if (!isCaptureDevice) {
@@ -716,6 +756,7 @@ export function BookingFormDialog({
         const normalizedDocument: ProcessedImageDocument = {
           file,
           previewDataUrl: toPreviewDataUrl(processed.croppedDocumentImageBase64),
+          croppedImageBase64: processed.croppedDocumentImageBase64,
           extractedData: processed.extractedData,
           validation: processed.validation,
           confidenceScore: processed.confidenceScore,
@@ -890,7 +931,7 @@ export function BookingFormDialog({
       return
     }
 
-    if (!isSampleDocumentReady || !submissionDocumentFile) {
+    if (requiresDocumentProof && (!isSampleDocumentReady || !submissionDocumentFile)) {
       setSampleSuccessMessage(null)
       setSampleErrorDetails(null)
       if (selectedDocumentType === "passport") {
@@ -910,17 +951,66 @@ export function BookingFormDialog({
       return
     }
 
-    if (!hasAllNationalIds) {
+    const selectedDocumentNumber =
+      selectedDocumentType === "passport"
+        ? (passportFrontDocument?.extractedData.documentNumber || "").trim()
+        : (eidFrontDocument?.extractedData.documentNumber || "").trim()
+
+    if (requiresDocumentProof && !selectedDocumentNumber) {
       setSampleSuccessMessage(null)
-      setSampleErrorDetails(null)
+      setSampleErrorDetails({
+        reason: "validation_failed",
+        retryable: true,
+        errorId: null,
+      })
       setSampleErrorMessage(
-        `National ID is required for all patients. Missing: ${missingNationalIdPatientIds.join(
-          ", "
-        )}`
+        selectedDocumentType === "passport"
+          ? "Passport Document No. not detected. Please recapture or re-upload."
+          : "EID number not detected. Please recapture or re-upload EID front."
       )
       void triggerHapticFeedback("warning")
       return
     }
+
+    if (requiresDocumentProof && croppedDocumentImageBase64List.length === 0) {
+      setSampleSuccessMessage(null)
+      setSampleErrorDetails({
+        reason: "validation_failed",
+        retryable: true,
+        errorId: null,
+      })
+      setSampleErrorMessage(
+        "Cropped document preview is not ready. Please recapture or re-upload."
+      )
+      void triggerHapticFeedback("warning")
+      return
+    }
+
+    if (
+      requiresDocumentProof &&
+      selectedDocumentType === "eid" &&
+      !eidFrontDocument?.validation.startsWith784
+    ) {
+      setSampleSuccessMessage(null)
+      setSampleErrorDetails({
+        reason: "validation_failed",
+        retryable: true,
+        errorId: null,
+      })
+      setSampleErrorMessage(
+        "Invalid EID number. EID number must start with 784."
+      )
+      void triggerHapticFeedback("warning")
+      return
+    }
+
+    const updatesForSubmission = requiresDocumentProof
+      ? mergeMissingNationalIdsFromDocument(
+          patientUpdates,
+          missingNationalIdPatientIds,
+          selectedDocumentNumber
+        )
+      : patientUpdates
 
     if (!onSubmitSampleCollection) {
       setSampleErrorMessage(null)
@@ -938,8 +1028,9 @@ export function BookingFormDialog({
     try {
       const result = await onSubmitSampleCollection({
         booking,
-        updates: patientUpdates,
+        updates: updatesForSubmission,
         idDocumentFile: submissionDocumentFile,
+        croppedDocumentImageBase64List,
       })
 
       if (result?.syncState === "pending") {
@@ -969,12 +1060,15 @@ export function BookingFormDialog({
     }
   }, [
     booking,
-    hasAllNationalIds,
+    croppedDocumentImageBase64List,
     isCaptureDevice,
     isSampleDocumentReady,
+    eidFrontDocument,
     missingNationalIdPatientIds,
     onSubmitSampleCollection,
+    passportFrontDocument,
     patientUpdates,
+    requiresDocumentProof,
     selectedDocumentType,
     submissionDocumentFile,
   ])
@@ -1515,7 +1609,9 @@ export function BookingFormDialog({
                               2. {isCaptureDevice ? "Capture Images" : "Upload Images"}
                             </CardTitle>
                             <CardDescription>
-                              Provide document proof to continue submission.
+                              {requiresDocumentProof
+                                ? "Provide document proof to continue submission."
+                                : "Optional when all patients already have a document ID."}
                             </CardDescription>
                           </CardHeader>
                           <CardContent className="space-y-3 p-4 pt-2">
@@ -1837,13 +1933,6 @@ export function BookingFormDialog({
                             </div>
                           )}
 
-                          {!hasAllNationalIds ? (
-                            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-600 dark:text-amber-300">
-                              Missing National IDs:{" "}
-                              {missingNationalIdPatientIds.join(", ")}
-                            </div>
-                          ) : null}
-
                           {sampleErrorMessage ? (
                             <div className="space-y-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-600 dark:text-rose-300">
                               <p>{sampleErrorMessage}</p>
@@ -1893,7 +1982,7 @@ export function BookingFormDialog({
                             type="button"
                             className="w-full sm:w-auto"
                             disabled={
-                              !isSampleDocumentReady ||
+                              (requiresDocumentProof && !isSampleDocumentReady) ||
                               isSubmittingSample ||
                               isDocumentProcessing
                             }

@@ -226,6 +226,10 @@ export default function BookingsPage() {
             await updateCollectorBookingPatients({
               bookingId: item.apiBookingId,
               updates: mapPatientUpdatesToApi(item.updates),
+              ...(item.croppedDocumentImageBase64List &&
+              item.croppedDocumentImageBase64List.length > 0
+                ? { croppedImagesBase64: item.croppedDocumentImageBase64List }
+                : {}),
             })
           }
 
@@ -379,6 +383,7 @@ export default function BookingsPage() {
       await updateCollectorBookingPatients({
         bookingId: booking.apiBookingId,
         updates: mapPatientUpdatesToApi(updates),
+        croppedImagesBase64: [],
       })
 
       await loadBookings(activeBucket)
@@ -390,6 +395,7 @@ export default function BookingsPage() {
     async ({
       booking,
       updates,
+      croppedDocumentImageBase64List,
     }: SubmitSampleCollectionInput): Promise<SubmitSampleCollectionResult> => {
       if (!booking.apiBookingId) {
         throw new Error("Unable to submit. Booking API id is missing.")
@@ -403,6 +409,10 @@ export default function BookingsPage() {
           await updateCollectorBookingPatients({
             bookingId: booking.apiBookingId,
             updates: mapPatientUpdatesToApi(updates),
+            ...(croppedDocumentImageBase64List &&
+            croppedDocumentImageBase64List.length > 0
+              ? { croppedImagesBase64: croppedDocumentImageBase64List }
+              : {}),
           })
         }
 
@@ -424,6 +434,7 @@ export default function BookingsPage() {
             bookingId: booking.bookingId,
             apiBookingId: booking.apiBookingId,
             updates,
+            croppedDocumentImageBase64List,
             eventId,
             collectedAt,
           })

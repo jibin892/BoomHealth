@@ -67,6 +67,7 @@ export type UpdateBookingPatientPayload = {
 
 export type UpdateBookingPatientsRequest = {
   updates: UpdateBookingPatientPayload[]
+  cropped_images_base64?: string[]
 }
 
 export type UpdateBookingPatientsResponse = {

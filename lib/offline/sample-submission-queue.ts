@@ -18,6 +18,7 @@ export type QueuedSampleSubmission = {
   bookingId: string
   apiBookingId: number
   updates: QueuedPatientUpdate[]
+  croppedDocumentImageBase64List?: string[]
   eventId: string
   collectedAt: string
   createdAt: string
@@ -42,6 +43,12 @@ function parseStoredQueue(value: string | null) {
     return parsed.filter((item) => {
       if (!item || typeof item !== "object") return false
       const candidate = item as Partial<QueuedSampleSubmission>
+      const hasValidCroppedImages =
+        !candidate.croppedDocumentImageBase64List ||
+        (Array.isArray(candidate.croppedDocumentImageBase64List) &&
+          candidate.croppedDocumentImageBase64List.every(
+            (entry) => typeof entry === "string"
+          ))
       return (
         typeof candidate.id === "string" &&
         typeof candidate.bookingId === "string" &&
@@ -50,6 +57,7 @@ function parseStoredQueue(value: string | null) {
         typeof candidate.collectedAt === "string" &&
         typeof candidate.createdAt === "string" &&
         Array.isArray(candidate.updates) &&
+        hasValidCroppedImages &&
         typeof candidate.retryCount === "number" &&
         typeof candidate.state === "string"
       )
