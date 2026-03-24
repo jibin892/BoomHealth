@@ -46,15 +46,15 @@ export function ThemeSettingsPanel() {
   const activeTheme = mounted ? theme : "system"
 
   return (
-    <Card className="max-w-2xl shadow-xs">
-      <CardHeader>
+    <Card className="w-full max-w-2xl shadow-sm">
+      <CardHeader className="space-y-1.5">
         <CardTitle>Theme</CardTitle>
         <CardDescription>
           Choose how the dashboard should look for your team.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
           {themeOptions.map((option) => (
             <Button
               key={option.key}
@@ -62,7 +62,7 @@ export function ThemeSettingsPanel() {
               variant={activeTheme === option.key ? "default" : "outline"}
               onClick={() => setTheme(option.key)}
               className={cn(
-                "h-auto flex-col items-start justify-start p-4 text-left",
+                "mobile-touch-target h-auto min-h-24 flex-col items-start justify-start rounded-xl p-4 text-left",
                 activeTheme === option.key && "ring-2 ring-primary/40"
               )}
             >

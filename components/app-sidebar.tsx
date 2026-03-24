@@ -57,22 +57,28 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   return (
     <Sidebar variant="inset" {...props}>
-      <SidebarHeader className="p-3 md:p-2">
+      <SidebarHeader className="border-b border-sidebar-border/70 p-3 md:p-2">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
+            <SidebarMenuButton
+              size="lg"
+              asChild
+              className="mobile-touch-target h-12 rounded-xl md:h-10 md:rounded-md"
+            >
               <Link href="/dashboard/bookings">
                 <Image
                   src="/icon.png"
                   alt="DarDoc"
                   width={32}
                   height={32}
-                  className="size-9 rounded-xl"
+                  className="size-9 rounded-xl md:size-8"
                   priority
                 />
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">DarDoc</span>
-                  <span className="truncate text-xs">Lab Bookings</span>
+                  <span className="truncate text-[11px] text-sidebar-foreground/70 md:text-xs">
+                    Lab Bookings
+                  </span>
                 </div>
               </Link>
             </SidebarMenuButton>

@@ -3,7 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 function OverviewCardSkeleton() {
   return (
-    <Card className="from-primary/5 to-card bg-gradient-to-t shadow-xs">
+    <Card className="from-primary/10 via-card to-card mobile-surface bg-gradient-to-br">
       <CardHeader className="space-y-3">
         <Skeleton className="h-4 w-32" />
         <Skeleton className="h-8 w-16" />
@@ -18,7 +18,7 @@ function OverviewCardSkeleton() {
 
 function MobileBookingCardSkeleton() {
   return (
-    <div className="rounded-xl border border-border/70 p-4 shadow-xs">
+    <div className="mobile-surface p-4">
       <div className="space-y-2 border-b border-border/60 pb-3">
         <Skeleton className="h-3 w-20" />
         <div className="flex items-center justify-between gap-2">
@@ -61,20 +61,20 @@ function DesktopTableRowSkeleton() {
 export function BookingsPageSkeleton() {
   return (
     <>
-      <div className="space-y-3 px-4 md:hidden">
+      <div className="mobile-page-shell space-y-3 md:hidden">
         <Skeleton className="h-10 w-full rounded-md" />
         <OverviewCardSkeleton />
         <OverviewCardSkeleton />
       </div>
 
-      <div className="hidden grid-cols-1 gap-4 px-4 md:grid md:grid-cols-2 lg:px-6 xl:grid-cols-4">
+      <div className="mobile-page-shell hidden grid-cols-1 gap-3 md:grid md:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
           <OverviewCardSkeleton key={`overview-skeleton-${index}`} />
         ))}
       </div>
 
-      <div className="px-4 pb-4 lg:px-6 lg:pb-6">
-        <Card className="shadow-xs">
+      <div className="mobile-page-shell pb-4 lg:pb-6">
+        <Card className="shadow-sm">
           <CardHeader className="space-y-3">
             <Skeleton className="h-6 w-44" />
             <Skeleton className="h-4 w-72 max-w-full" />

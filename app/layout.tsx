@@ -6,6 +6,10 @@ import { PwaServiceWorker } from "@/components/pwa/pwa-service-worker"
 import { NativeMobileBridge } from "@/components/capacitor/native-mobile-bridge"
 import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
+import { Geist } from "next/font/google";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: "DarDoc",
@@ -42,7 +46,7 @@ export const viewport: Viewport = {
 export const dynamic = "force-dynamic"
 
 const signInUrl = process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL || "/sign-in"
-const signUpUrl = process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL || "/sign-up"
+const signUpUrl = process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL || signInUrl
 const afterSignInUrl = "/dashboard/bookings"
 const afterSignUpUrl = "/dashboard/bookings"
 
@@ -59,7 +63,7 @@ export default function RootLayout({
       afterSignInUrl={afterSignInUrl}
       afterSignUpUrl={afterSignUpUrl}
     >
-      <html lang="en" suppressHydrationWarning>
+      <html lang="en" suppressHydrationWarning className={cn("font-sans", geist.variable)}>
         <body suppressHydrationWarning className="font-sans antialiased">
           <ThemeProvider
             attribute="class"

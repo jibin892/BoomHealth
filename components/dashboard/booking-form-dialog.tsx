@@ -1112,12 +1112,12 @@ export function BookingFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bottom-0 left-0 top-auto h-[94dvh] max-h-[94dvh] w-screen max-w-none translate-x-0 translate-y-0 overflow-hidden rounded-t-2xl rounded-b-none border border-border/70 p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom [&>button]:hidden sm:h-[95dvh] sm:max-h-[95dvh] sm:w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-1rem)] sm:rounded-xl sm:border sm:p-0 md:bottom-auto md:left-[50%] md:top-[50%] md:h-auto md:max-h-[620px] md:max-w-[980px] md:translate-x-[-50%] md:translate-y-[-50%] lg:max-w-[1120px]">
+      <DialogContent className="inset-x-0 bottom-0 top-auto h-[100dvh] max-h-[100dvh] w-[100dvw] max-w-[100dvw] translate-x-0 translate-y-0 overflow-hidden rounded-none border-x-0 border-b-0 border-border/70 p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom [&>button]:hidden sm:bottom-0 sm:h-[95dvh] sm:max-h-[95dvh] sm:w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-1rem)] sm:rounded-t-2xl sm:border sm:p-0 md:bottom-auto md:left-[50%] md:top-[50%] md:h-auto md:max-h-[620px] md:max-w-[980px] md:translate-x-[-50%] md:translate-y-[-50%] md:rounded-xl lg:max-w-[1120px]">
         <DialogTitle className="sr-only">Booking Details</DialogTitle>
         <DialogDescription className="sr-only">
           Review booking details, update patient information, and submit sample collection.
         </DialogDescription>
-        <SidebarProvider className="h-full items-start">
+        <SidebarProvider className="h-full items-start overflow-hidden">
           <Sidebar collapsible="none" className="hidden border-r md:flex">
             <SidebarContent>
               <SidebarGroup>
@@ -1140,10 +1140,16 @@ export function BookingFormDialog({
             </SidebarContent>
           </Sidebar>
 
-          <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden md:h-[580px]">
-            <header className="safe-area-top flex min-h-14 shrink-0 items-center border-b md:h-16">
-              <div className="flex w-full min-w-0 items-center justify-between gap-2 px-3 sm:px-4">
-                <Breadcrumb className="min-w-0">
+          <main className="flex h-full w-full min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-hidden md:h-[580px]">
+            <header className="safe-area-top bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-20 flex min-h-14 shrink-0 items-center border-b backdrop-blur md:h-16 md:bg-transparent md:backdrop-blur-none">
+              <div className="flex w-full min-w-0 items-center justify-between gap-2 overflow-x-hidden px-3 sm:px-4">
+                <div className="min-w-0 md:hidden">
+                  <p className="truncate text-sm font-semibold">Bookings</p>
+                  <p className="text-muted-foreground truncate text-[11px]">
+                    {booking?.bookingId ?? "Details"}
+                  </p>
+                </div>
+                <Breadcrumb className="hidden min-w-0 md:block">
                   <BreadcrumbList>
                     <BreadcrumbItem>
                       <BreadcrumbPage>Bookings</BreadcrumbPage>
@@ -1158,16 +1164,17 @@ export function BookingFormDialog({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="mobile-touch-target h-9 shrink-0 rounded-full border-border/70 px-3"
+                  className="mobile-touch-target h-10 shrink-0 rounded-full border-border/70 px-2.5 sm:px-3"
                   onClick={() => onOpenChange(false)}
                 >
                   <X className="size-4" />
-                  <span className="text-xs font-medium">Close</span>
+                  <span className="hidden text-xs font-medium sm:inline">Close</span>
+                  <span className="sr-only">Close dialog</span>
                 </Button>
               </div>
             </header>
 
-            <div className="border-b px-3 py-3 md:hidden">
+            <div className="border-b border-border/70 bg-background/95 px-3 py-2.5 md:hidden">
               <div
                 role="tablist"
                 aria-label="Booking details sections"
@@ -1184,7 +1191,7 @@ export function BookingFormDialog({
                       aria-selected={isActive}
                       size="sm"
                       variant={isActive ? "default" : "outline"}
-                      className="mobile-touch-target h-11 w-full justify-start rounded-xl px-3"
+                      className="mobile-touch-target h-11 w-full justify-start rounded-xl px-3 text-xs font-semibold"
                       onClick={() => setActiveSection(item.key)}
                     >
                       <item.icon className="size-4" />
@@ -1195,7 +1202,7 @@ export function BookingFormDialog({
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-y-contain p-4 pb-[calc(7rem+env(safe-area-inset-bottom))] [touch-action:pan-y] md:p-6 md:pb-6">
+            <div className="min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3 pb-[calc(7.25rem+env(safe-area-inset-bottom))] [touch-action:pan-y] sm:p-4 md:space-y-5 md:p-6 md:pb-6">
               {activeSection === "booking" ? (
                 <section className="space-y-4">
                   <Card className="shadow-none">
@@ -1225,8 +1232,10 @@ export function BookingFormDialog({
                           <CardDescription className="text-xs uppercase tracking-wide">
                             {item.label}
                           </CardDescription>
-                          <CardTitle className="text-base font-semibold">
-                            <span className="break-words">{item.value}</span>
+                          <CardTitle className="text-base font-semibold leading-snug">
+                            <span className="break-words whitespace-normal">
+                              {item.value}
+                            </span>
                           </CardTitle>
                         </CardHeader>
                       </Card>
@@ -1435,8 +1444,10 @@ export function BookingFormDialog({
                           <CardDescription className="text-xs uppercase tracking-wide">
                             {item.label}
                           </CardDescription>
-                          <CardTitle className="text-base font-semibold">
-                            <span className="break-words">{item.value}</span>
+                          <CardTitle className="text-base font-semibold leading-snug">
+                            <span className="break-words whitespace-normal">
+                              {item.value}
+                            </span>
                           </CardTitle>
                         </CardHeader>
                       </Card>
@@ -1458,7 +1469,7 @@ export function BookingFormDialog({
                         </div>
                         <Button
                           type="button"
-                          className="w-full sm:w-auto"
+                          className="mobile-touch-target h-11 w-full rounded-xl sm:h-10 sm:w-auto"
                           onClick={() => setShowSampleCollection(true)}
                         >
                           Mark as Sample Collected
@@ -1569,7 +1580,7 @@ export function BookingFormDialog({
                                     ? "default"
                                     : "outline"
                                 }
-                                className="w-full"
+                                className="mobile-touch-target h-10 w-full rounded-xl"
                                 onClick={() => {
                                   setSelectedDocumentType("passport")
                                   setSampleErrorMessage(null)
@@ -1584,7 +1595,7 @@ export function BookingFormDialog({
                                 variant={
                                   selectedDocumentType === "eid" ? "default" : "outline"
                                 }
-                                className="w-full"
+                                className="mobile-touch-target h-10 w-full rounded-xl"
                                 onClick={() => {
                                   setSelectedDocumentType("eid")
                                   setSampleErrorMessage(null)
@@ -1621,7 +1632,7 @@ export function BookingFormDialog({
                                   <Button
                                     type="button"
                                     variant="outline"
-                                    className="w-full sm:w-auto"
+                                    className="mobile-touch-target h-10 w-full rounded-xl sm:w-auto"
                                     disabled={
                                       isRequestingCameraPermission || isDocumentProcessing
                                     }
@@ -1643,7 +1654,7 @@ export function BookingFormDialog({
                                   <Button
                                     type="button"
                                     variant="outline"
-                                    className="w-full sm:w-auto"
+                                    className="mobile-touch-target h-10 w-full rounded-xl sm:w-auto"
                                     disabled={
                                       isRequestingCameraPermission || isDocumentProcessing
                                     }
@@ -1685,7 +1696,7 @@ export function BookingFormDialog({
                                       <Button
                                         type="button"
                                         variant="outline"
-                                        className="w-full"
+                                        className="mobile-touch-target h-10 w-full rounded-xl"
                                         disabled={
                                           isRequestingCameraPermission || isDocumentProcessing
                                         }
@@ -1702,7 +1713,7 @@ export function BookingFormDialog({
                                       <Button
                                         type="button"
                                         variant="outline"
-                                        className="w-full"
+                                        className="mobile-touch-target h-10 w-full rounded-xl"
                                         disabled={
                                           isRequestingCameraPermission || isDocumentProcessing
                                         }
@@ -1724,7 +1735,7 @@ export function BookingFormDialog({
                               <Button
                                 type="button"
                                 variant="outline"
-                                className="w-full sm:w-auto"
+                                className="mobile-touch-target h-10 w-full rounded-xl sm:w-auto"
                                 disabled={isDocumentProcessing}
                                 onClick={() => passportUploadInputRef.current?.click()}
                               >
@@ -1758,7 +1769,7 @@ export function BookingFormDialog({
                                   <Button
                                     type="button"
                                     variant="outline"
-                                    className="w-full"
+                                    className="mobile-touch-target h-10 w-full rounded-xl"
                                     disabled={isDocumentProcessing}
                                     onClick={() => eidFrontUploadInputRef.current?.click()}
                                   >
@@ -1771,7 +1782,7 @@ export function BookingFormDialog({
                                   <Button
                                     type="button"
                                     variant="outline"
-                                    className="w-full"
+                                    className="mobile-touch-target h-10 w-full rounded-xl"
                                     disabled={isDocumentProcessing}
                                     onClick={() => eidBackUploadInputRef.current?.click()}
                                   >
@@ -1980,7 +1991,7 @@ export function BookingFormDialog({
 
                           <Button
                             type="button"
-                            className="w-full sm:w-auto"
+                            className="mobile-touch-target h-10 w-full rounded-xl sm:w-auto"
                             disabled={
                               (requiresDocumentProof && !isSampleDocumentReady) ||
                               isSubmittingSample ||
@@ -2007,8 +2018,8 @@ export function BookingFormDialog({
                 </Button>
               </div>
             </div>
-            <div className="safe-area-bottom border-t border-border/70 bg-background/95 p-3 md:hidden">
-              <div className="grid grid-cols-2 gap-2">
+            <div className="safe-area-bottom border-t border-border/70 bg-background/95 p-3 shadow-[0_-8px_20px_rgba(0,0,0,0.08)] backdrop-blur md:hidden">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <Button
                   type="button"
                   variant="outline"

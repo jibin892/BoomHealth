@@ -49,11 +49,12 @@ const statusFilterLabel: Record<ApiStatusFilter, string> = {
 }
 
 const statusStyles: Record<BookingTableRow["status"], string> = {
-  Pending: "text-amber-300 border-amber-400/40 bg-amber-500/10",
-  Confirmed: "text-blue-300 border-blue-400/40 bg-blue-500/10",
-  "Result Ready": "text-emerald-300 border-emerald-400/40 bg-emerald-500/10",
-  Cancelled: "text-rose-300 border-rose-400/40 bg-rose-500/10",
-  Unknown: "text-slate-300 border-slate-400/40 bg-slate-500/10",
+  Pending: "border-amber-500/30 bg-amber-500/12 text-amber-700 dark:text-amber-300",
+  Confirmed: "border-blue-500/30 bg-blue-500/12 text-blue-700 dark:text-blue-300",
+  "Result Ready":
+    "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+  Cancelled: "border-rose-500/30 bg-rose-500/12 text-rose-700 dark:text-rose-300",
+  Unknown: "border-slate-500/30 bg-slate-500/12 text-slate-700 dark:text-slate-300",
 }
 
 const DISPLAY_TIME_ZONE = "Asia/Dubai"
@@ -127,6 +128,7 @@ export function BookingsTable({
 
       return (
         row.bookingId.toLowerCase().includes(query) ||
+        row.orderId?.toLowerCase().includes(query) ||
         row.patientName.toLowerCase().includes(query) ||
         row.testName.toLowerCase().includes(query) ||
         row.date.toLowerCase().includes(query) ||
@@ -165,8 +167,8 @@ export function BookingsTable({
   }, [])
 
   return (
-    <div className="px-4 pb-4 lg:px-6 lg:pb-6">
-      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/85 sticky top-[calc(env(safe-area-inset-top)+3.45rem)] z-20 -mx-4 mb-3 space-y-3 border-b border-border/70 px-4 pt-2 pb-3 backdrop-blur md:hidden">
+    <div className="mobile-page-shell pb-4 lg:pb-6">
+      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/85 sticky top-[calc(env(safe-area-inset-top)+3.35rem)] z-20 -mx-4 mb-3 space-y-3 border-b border-border/70 px-4 pt-2 pb-3 backdrop-blur md:hidden">
         <div className="space-y-1">
           <h2 className="text-base font-semibold">{title}</h2>
           <p className="text-muted-foreground text-xs">{description}</p>
@@ -174,7 +176,7 @@ export function BookingsTable({
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search by booking ID, patient, or test"
+          placeholder="Search booking, patient, order ID, or test"
           className="mobile-touch-target h-11 rounded-xl"
         />
         <div
@@ -194,7 +196,7 @@ export function BookingsTable({
                 variant={isActive ? "default" : "outline"}
                 size="sm"
                 className={cn(
-                  "mobile-touch-target h-10 shrink-0 rounded-full px-4 text-sm",
+                  "mobile-touch-target h-10 shrink-0 rounded-full px-4 text-xs font-semibold",
                   !isActive && "text-muted-foreground"
                 )}
                 onClick={() => setStatus(option)}
@@ -218,7 +220,7 @@ export function BookingsTable({
         </p>
       </div>
 
-      <Card className="border-0 bg-transparent shadow-none md:border md:bg-card md:shadow-xs">
+      <Card className="border-0 bg-transparent shadow-none md:border md:bg-card md:shadow-sm">
         <CardHeader className="hidden md:flex">
           <CardTitle>{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
@@ -227,7 +229,7 @@ export function BookingsTable({
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by booking ID, patient, or test"
+                placeholder="Search by booking ID, patient, order ID, or test"
                 className="md:max-w-sm"
               />
               {hasFilters ? (
@@ -260,7 +262,7 @@ export function BookingsTable({
         </CardHeader>
         <CardContent className="p-0 md:p-6 md:pt-0">
           {isEmpty ? (
-            <div className="flex min-h-[240px] flex-col items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center">
+            <div className="flex min-h-[240px] flex-col items-center justify-center rounded-xl border border-dashed px-4 py-8 text-center">
               {hasFilters ? (
                 <SearchX className="text-muted-foreground mb-3 size-10" />
               ) : (
@@ -297,7 +299,7 @@ export function BookingsTable({
                   return (
                     <div
                       key={row.bookingId}
-                      className="bg-card/95 rounded-2xl border border-border/70 p-4 shadow-sm transition-transform active:scale-[0.995]"
+                      className="mobile-surface p-4 transition-transform active:scale-[0.995]"
                     >
                       <div className="border-b border-border/60 pb-3">
                         <div className="flex items-start justify-between gap-2">
@@ -325,20 +327,20 @@ export function BookingsTable({
                           <span className="text-muted-foreground text-xs font-medium">
                             Patient
                           </span>
-                          <span className="truncate text-right">{row.patientName}</span>
+                          <span className="truncate font-medium">{row.patientName}</span>
                         </div>
                         <div className="grid grid-cols-[84px_1fr] items-start gap-2">
                           <span className="text-muted-foreground text-xs font-medium">
                             Test
                           </span>
-                          <span className="truncate text-right">{row.testName}</span>
+                          <span className="truncate font-medium">{row.testName}</span>
                         </div>
                       </div>
                       {onRowSelect ? (
                         <Button
                           type="button"
                           size="sm"
-                          className="mt-4 w-full justify-between"
+                          className="mobile-touch-target mt-4 h-10 w-full justify-between rounded-xl"
                           onClick={() => onRowSelect(row)}
                         >
                           View Details
@@ -379,7 +381,10 @@ export function BookingsTable({
                           }}
                           tabIndex={onRowSelect ? 0 : undefined}
                           role={onRowSelect ? "button" : undefined}
-                          className={cn(onRowSelect && "cursor-pointer hover:bg-muted/40")}
+                          className={cn(
+                            onRowSelect &&
+                              "cursor-pointer hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                          )}
                         >
                           <TableCell className="font-medium">{row.bookingId}</TableCell>
                           <TableCell>{row.patientName}</TableCell>

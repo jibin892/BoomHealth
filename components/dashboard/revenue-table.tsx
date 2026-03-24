@@ -142,8 +142,8 @@ export function RevenueTable({
   }, [])
 
   return (
-    <div className="px-4 pb-4 lg:px-6 lg:pb-6">
-      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/85 sticky top-[calc(env(safe-area-inset-top)+3.45rem)] z-20 -mx-4 mb-3 space-y-3 border-b border-border/70 px-4 pt-2 pb-3 backdrop-blur md:hidden">
+    <div className="mobile-page-shell pb-4 lg:pb-6">
+      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/85 sticky top-[calc(env(safe-area-inset-top)+3.35rem)] z-20 -mx-4 mb-3 space-y-3 border-b border-border/70 px-4 pt-2 pb-3 backdrop-blur md:hidden">
         <div className="space-y-1">
           <h2 className="text-base font-semibold">{title}</h2>
           <p className="text-muted-foreground text-xs">{description}</p>
@@ -165,7 +165,7 @@ export function RevenueTable({
         ) : null}
         <div className="grid grid-cols-2 gap-2">
           <Select value={selectedYear} onValueChange={setSelectedYear}>
-            <SelectTrigger className="mobile-touch-target h-10 w-full rounded-xl">
+            <SelectTrigger className="mobile-touch-target h-11 w-full rounded-xl">
               <SelectValue placeholder="Year" />
             </SelectTrigger>
             <SelectContent>
@@ -178,7 +178,7 @@ export function RevenueTable({
             </SelectContent>
           </Select>
           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-            <SelectTrigger className="mobile-touch-target h-10 w-full rounded-xl">
+            <SelectTrigger className="mobile-touch-target h-11 w-full rounded-xl">
               <SelectValue placeholder="Month" />
             </SelectTrigger>
             <SelectContent>
@@ -196,7 +196,7 @@ export function RevenueTable({
         </p>
       </div>
 
-      <Card className="border-0 bg-transparent shadow-none md:border md:bg-card md:shadow-xs">
+      <Card className="border-0 bg-transparent shadow-none md:border md:bg-card md:shadow-sm">
         <CardHeader className="hidden md:flex">
           <CardTitle>{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
@@ -252,7 +252,7 @@ export function RevenueTable({
         </CardHeader>
         <CardContent className="p-0 md:p-6 md:pt-0">
           {isEmpty ? (
-            <div className="flex min-h-[240px] flex-col items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center">
+            <div className="flex min-h-[240px] flex-col items-center justify-center rounded-xl border border-dashed px-4 py-8 text-center">
               {hasFilters ? (
                 <SearchX className="text-muted-foreground mb-3 size-10" />
               ) : (
@@ -282,10 +282,10 @@ export function RevenueTable({
                 {paginatedRows.map((row) => (
                   <div
                     key={row.month}
-                    className="rounded-2xl border border-border/70 bg-card/95 p-4 shadow-sm transition-transform active:scale-[0.995]"
+                    className="mobile-surface p-4 transition-transform active:scale-[0.995]"
                   >
-                    <p className="text-sm font-semibold">{row.month}</p>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                    <p className="text-sm font-semibold tracking-tight">{row.month}</p>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                       <p className="text-muted-foreground">Bookings</p>
                       <p className="text-right tabular-nums">{row.bookings}</p>
                       <p className="text-muted-foreground">Collected</p>

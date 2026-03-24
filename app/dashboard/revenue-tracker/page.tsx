@@ -67,8 +67,8 @@ export default function RevenueTrackerPage() {
       <AppSidebar />
       <SidebarInset className="overflow-x-hidden">
         <header className="safe-area-top bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-30 flex min-h-14 shrink-0 items-center border-b border-border/70 backdrop-blur md:static md:h-16 md:min-h-16 md:bg-transparent md:pt-0 md:backdrop-blur-none">
-          <div className="flex min-w-0 items-center gap-2 px-3 py-2 sm:px-4 md:py-0">
-            <SidebarTrigger className="-ml-1 h-9 w-9 rounded-full md:h-7 md:w-7" />
+          <div className="flex w-full min-w-0 items-center gap-2 px-3 py-2 sm:px-4 md:py-0">
+            <SidebarTrigger className="-ml-1 h-10 w-10 rounded-full md:h-7 md:w-7" />
             <Separator
               orientation="vertical"
               className="mr-2 hidden data-[orientation=vertical]:h-4 md:block"
@@ -92,7 +92,7 @@ export default function RevenueTrackerPage() {
             </Breadcrumb>
           </div>
         </header>
-        <div className="flex flex-1 flex-col gap-5 pt-3 pb-[calc(6.25rem+env(safe-area-inset-bottom))] md:pb-6">
+        <div className="flex flex-1 flex-col gap-4 pt-3 pb-[calc(6.25rem+env(safe-area-inset-bottom))] md:gap-5 md:pb-6">
           <OverviewCards items={overviewItems} mobileLabel="Revenue Overview" />
           <RevenueTable
             rows={revenueRows}

@@ -39,15 +39,15 @@ export function TablePagination({
   onPageSizeChange,
 }: TablePaginationProps) {
   return (
-    <div className="mt-5 border-t border-border/70 pt-4">
-      <p className="text-muted-foreground text-xs">
+    <div className="mt-4 border-t border-border/70 pt-3 sm:mt-5 sm:pt-4">
+      <p className="text-muted-foreground text-xs leading-relaxed">
         {filteredCount === 0
           ? `Showing 0 ${entityLabel}`
           : `Showing ${rangeStart}-${rangeEnd} of ${filteredCount} filtered ${entityLabel}`}
       </p>
 
       <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="border-border/60 flex w-full flex-col gap-2 rounded-xl border bg-card/60 px-3 py-2 sm:w-auto sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:rounded-none sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
+        <div className="mobile-surface flex w-full flex-col gap-2 px-3 py-2 sm:w-auto sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:rounded-none sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:shadow-none">
           <label
             htmlFor={pageSizeId}
             className="text-muted-foreground shrink-0 text-xs"

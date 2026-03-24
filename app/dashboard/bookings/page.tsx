@@ -455,8 +455,8 @@ export default function BookingsPage() {
       <AppSidebar />
       <SidebarInset className="overflow-x-hidden">
         <header className="safe-area-top bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-30 flex min-h-14 shrink-0 items-center border-b border-border/70 backdrop-blur md:static md:h-16 md:min-h-16 md:bg-transparent md:pt-0 md:backdrop-blur-none">
-          <div className="flex min-w-0 items-center gap-2 px-3 py-2 sm:px-4 md:py-0">
-            <SidebarTrigger className="-ml-1 h-9 w-9 rounded-full md:h-7 md:w-7" />
+          <div className="flex w-full min-w-0 items-center gap-2 px-3 py-2 sm:px-4 md:py-0">
+            <SidebarTrigger className="-ml-1 h-10 w-10 rounded-full md:h-7 md:w-7" />
             <Separator
               orientation="vertical"
               className="mr-2 hidden data-[orientation=vertical]:h-4 md:block"
@@ -482,8 +482,8 @@ export default function BookingsPage() {
             </Breadcrumb>
           </div>
         </header>
-        <div className="flex flex-1 flex-col gap-5 pt-3 pb-[calc(6.25rem+env(safe-area-inset-bottom))] md:py-6 md:pb-6">
-          <div className="space-y-3 px-4 lg:px-6">
+        <div className="flex flex-1 flex-col gap-4 pt-3 pb-[calc(6.25rem+env(safe-area-inset-bottom))] md:gap-5 md:py-6 md:pb-6">
+          <div className="mobile-page-shell space-y-3">
             {pullDistance > 0 ? (
               <div className="flex items-center justify-center md:hidden">
                 <Badge variant="outline" className="gap-2">
@@ -495,12 +495,12 @@ export default function BookingsPage() {
               </div>
             ) : null}
             <div className="grid grid-cols-[1fr_auto] items-center gap-2 md:hidden">
-              <div className="bg-muted/60 flex items-center rounded-xl p-1">
+              <div className="bg-muted/60 flex items-center rounded-xl p-1.5">
                 {bookingBuckets.map((bucket) => (
                   <Button
                     key={bucket.value}
                     size="sm"
-                    className="mobile-touch-target h-9 flex-1 rounded-lg text-sm"
+                    className="mobile-touch-target h-10 flex-1 rounded-lg text-sm font-semibold"
                     variant={activeBucket === bucket.value ? "default" : "ghost"}
                     onClick={() => {
                       void triggerHapticFeedback("light")
@@ -558,7 +558,7 @@ export default function BookingsPage() {
               </Button>
             </div>
             {syncSummary.total > 0 ? (
-              <div className="rounded-xl border border-border/70 bg-card/70 p-3">
+              <div className="mobile-surface bg-card/70 p-3">
                 <div className="flex flex-wrap items-center gap-2">
                   {syncSummary.pending > 0 ? (
                     <Badge variant={mapSyncStateToBadgeVariant("PENDING")}>
@@ -588,7 +588,7 @@ export default function BookingsPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="ml-auto"
+                    className="ml-auto w-full sm:w-auto"
                     disabled={isSyncingQueue}
                     onClick={() => {
                       void processQueuedSubmissions()
@@ -613,7 +613,7 @@ export default function BookingsPage() {
           {isInitialLoading ? (
             <BookingsPageSkeleton />
           ) : apiError && rows.length === 0 ? (
-            <div className="px-4 pb-2 lg:px-6">
+            <div className="mobile-page-shell pb-2">
               <PageErrorState
                 title={isNetworkError ? "Network Error" : "Unable to load bookings"}
                 description={apiError}

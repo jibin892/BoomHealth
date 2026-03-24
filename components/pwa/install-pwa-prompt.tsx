@@ -71,17 +71,26 @@ export function InstallPwaPrompt() {
   if (!isVisible || !deferredPrompt) return null
 
   return (
-    <div className="pointer-events-none fixed inset-x-4 bottom-24 z-50 sm:left-auto sm:right-4 sm:w-[360px]">
-      <div className="pointer-events-auto rounded-xl border bg-card p-4 shadow-lg">
+    <div className="pointer-events-none fixed inset-x-4 bottom-[calc(env(safe-area-inset-bottom)+6.25rem)] z-50 sm:left-auto sm:right-4 sm:w-[360px]">
+      <div className="pointer-events-auto rounded-2xl border border-border/70 bg-card/95 p-4 shadow-lg backdrop-blur">
         <p className="text-sm font-semibold">Install DarDoc app</p>
         <p className="text-muted-foreground mt-1 text-xs">
           Add DarDoc to your home screen for faster access to bookings.
         </p>
-        <div className="mt-3 flex items-center justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={dismissPrompt}>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="mobile-touch-target h-10 rounded-xl"
+            onClick={dismissPrompt}
+          >
             Later
           </Button>
-          <Button size="sm" onClick={() => void installApp()}>
+          <Button
+            size="sm"
+            className="mobile-touch-target h-10 rounded-xl"
+            onClick={() => void installApp()}
+          >
             Install
           </Button>
         </div>

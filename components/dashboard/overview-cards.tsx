@@ -34,14 +34,16 @@ type OverviewCardsProps = {
 
 function OverviewCard({ item }: { item: OverviewCardItem }) {
   return (
-    <Card className="from-primary/5 to-card bg-gradient-to-t shadow-xs">
-      <CardHeader>
-        <CardDescription>{item.title}</CardDescription>
-        <CardTitle className="text-2xl font-semibold tabular-nums">
+    <Card className="from-primary/10 via-card to-card mobile-surface bg-gradient-to-br">
+      <CardHeader className="space-y-2">
+        <CardDescription className="text-[11px] uppercase tracking-wide">
+          {item.title}
+        </CardDescription>
+        <CardTitle className="text-xl font-semibold tabular-nums sm:text-2xl">
           {item.value}
         </CardTitle>
-        <div className="pt-1">
-          <Badge variant="outline" className="gap-1.5">
+        <div className="pt-0.5">
+          <Badge variant="outline" className="gap-1.5 rounded-full px-2.5 text-[11px]">
             {item.trend === "up" ? (
               <TrendingUp className="size-3.5" />
             ) : (
@@ -51,7 +53,7 @@ function OverviewCard({ item }: { item: OverviewCardItem }) {
           </Badge>
         </div>
       </CardHeader>
-      <CardFooter className="text-muted-foreground pt-0 text-sm">
+      <CardFooter className="text-muted-foreground pt-0 text-xs sm:text-sm">
         {item.summary}
       </CardFooter>
     </Card>
@@ -62,20 +64,20 @@ export function OverviewCards({
   items,
   mobileLabel = "Booking Overview",
 }: OverviewCardsProps) {
-  const [isMobileExpanded, setIsMobileExpanded] = React.useState(false)
+  const [isMobileExpanded, setIsMobileExpanded] = React.useState(true)
 
   return (
     <>
       <Collapsible
         open={isMobileExpanded}
         onOpenChange={setIsMobileExpanded}
-        className="space-y-3 px-4 md:hidden"
+        className="mobile-page-shell space-y-3 md:hidden"
       >
         <CollapsibleTrigger asChild>
           <Button
             type="button"
             variant="outline"
-            className="mobile-touch-target h-11 w-full justify-between rounded-xl bg-card/60"
+            className="mobile-touch-target h-11 w-full justify-between rounded-xl bg-card/70"
             aria-expanded={isMobileExpanded}
             aria-label={`Toggle ${mobileLabel.toLowerCase()} cards`}
           >
@@ -95,7 +97,7 @@ export function OverviewCards({
         </CollapsibleContent>
       </Collapsible>
 
-      <div className="hidden grid-cols-1 gap-4 px-4 md:grid md:grid-cols-2 lg:px-6 xl:grid-cols-4">
+      <div className="mobile-page-shell hidden grid-cols-1 gap-3 md:grid md:grid-cols-2 xl:grid-cols-4">
         {items.map((item) => (
           <OverviewCard key={item.title} item={item} />
         ))}

@@ -24,8 +24,8 @@ export function NetworkStatusBanner() {
   }
 
   return (
-    <div className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-b border-amber-400/30">
-      <div className="mx-auto flex max-w-screen-2xl items-center justify-center gap-2 px-3 py-2 text-xs sm:text-sm">
+    <div className="safe-area-top bg-amber-500/15 text-amber-700 dark:text-amber-300 sticky top-0 z-[60] border-b border-amber-400/30">
+      <div className="mx-auto flex max-w-screen-2xl items-center justify-center gap-2 px-3 py-2.5 text-xs font-medium sm:text-sm">
         <WifiOff className="size-4" />
         <span>No internet connection. Check your network and try again.</span>
       </div>

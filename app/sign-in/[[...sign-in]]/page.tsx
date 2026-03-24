@@ -16,7 +16,13 @@ export default async function SignInPage() {
       <SignIn
         path="/sign-in"
         routing="path"
-        signUpUrl="/sign-up"
+        signUpUrl="/sign-in"
+        appearance={{
+          elements: {
+            footerAction: "hidden",
+            footerActionLink: "hidden",
+          },
+        }}
         forceRedirectUrl="/dashboard/bookings"
         fallbackRedirectUrl="/dashboard/bookings"
       />
