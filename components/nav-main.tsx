@@ -6,6 +6,7 @@ import { type LucideIcon } from "lucide-react"
 import {
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -18,21 +19,21 @@ export function NavMain({
     title: string
     url: string
     icon: LucideIcon
+    description?: string
   }[]
 }) {
   const pathname = usePathname()
 
   return (
     <SidebarGroup>
+      <SidebarGroupLabel>Navigation</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
           {items.map((item) => {
-            const isBookingsRoot =
-              item.url === "/dashboard/bookings" && pathname === "/dashboard"
             const isActive =
-              pathname === item.url ||
-              pathname.startsWith(`${item.url}/`) ||
-              isBookingsRoot
+              item.url === "/dashboard"
+                ? pathname === "/dashboard"
+                : pathname === item.url || pathname.startsWith(`${item.url}/`)
 
             return (
               <SidebarMenuItem key={item.title}>
@@ -40,11 +41,18 @@ export function NavMain({
                   asChild
                   tooltip={item.title}
                   isActive={isActive}
-                  className="mobile-touch-target h-10 rounded-xl text-[15px] md:h-8 md:rounded-md md:text-sm data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:font-semibold"
+                  className="mobile-touch-target h-11 rounded-xl text-[15px] md:h-10 md:rounded-md md:text-sm data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:font-semibold"
                 >
                   <Link href={item.url}>
                     <item.icon />
-                    <span>{item.title}</span>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate">{item.title}</span>
+                      {item.description ? (
+                        <span className="truncate text-[11px] font-normal text-current/70 md:text-[10px]">
+                          {item.description}
+                        </span>
+                      ) : null}
+                    </span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

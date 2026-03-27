@@ -16,11 +16,13 @@ export function AuthCardShell({
   return (
     <div
       className={cn(
-        "safe-area-top safe-area-bottom bg-background flex min-h-svh flex-col items-center justify-center gap-6 px-4 py-6 sm:p-6 md:p-10",
+        "safe-area-top safe-area-bottom bg-background flex min-h-svh flex-col items-center justify-start px-4 py-10 sm:justify-center sm:p-6 md:p-10",
         className
       )}
     >
-      <div className={cn("w-full max-w-sm sm:max-w-md", contentClassName)}>{children}</div>
+      <div className={cn("w-full max-w-sm sm:max-w-md", contentClassName)}>
+        {children}
+      </div>
     </div>
   )
 }

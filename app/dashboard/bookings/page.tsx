@@ -19,7 +19,6 @@ import {
 import { BookingsPageSkeleton } from "@/components/dashboard/bookings-page-skeleton"
 import { BookingsTable } from "@/components/dashboard/bookings-table"
 import { OverviewCards } from "@/components/dashboard/overview-cards"
-import { MobileBottomNav } from "@/components/mobile-bottom-nav"
 import { Badge } from "@/components/ui/badge"
 import { PageErrorState } from "@/components/ui/page-error-state"
 import {
@@ -66,11 +65,6 @@ import {
 } from "@/lib/offline/sample-submission-queue"
 import { cn } from "@/lib/utils"
 
-const bookingBuckets: Array<{ label: string; value: CollectorBookingBucket }> = [
-  { label: "Current", value: "current" },
-  { label: "Past", value: "past" },
-]
-
 function createSampleEventId(booking: BookingTableRow) {
   return `evt_sample_${booking.orderId || booking.bookingId}_${Date.now()}`
 }
@@ -105,8 +99,8 @@ export default function BookingsPage() {
   const [selectedBooking, setSelectedBooking] =
     React.useState<BookingTableRow | null>(null)
   const [isBookingFormOpen, setIsBookingFormOpen] = React.useState(false)
-  const [activeBucket, setActiveBucket] =
-    React.useState<CollectorBookingBucket>("current")
+  const activeBucket: CollectorBookingBucket = "current"
+  const [pageSize, setPageSize] = React.useState(50)
   const [rows, setRows] = React.useState<BookingTableRow[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
@@ -121,6 +115,7 @@ export default function BookingsPage() {
   const [pullDistance, setPullDistance] = React.useState(0)
   const [isPullReady, setIsPullReady] = React.useState(false)
   const isQueueSyncInProgressRef = React.useRef(false)
+  const scrollViewportRef = React.useRef<HTMLDivElement | null>(null)
   const isInitialLoading = isLoading && rows.length === 0
 
   const overviewCards = React.useMemo(() => buildBookingOverviewCards(rows), [rows])
@@ -166,8 +161,8 @@ export default function BookingsPage() {
     try {
       const response =
         bucket === "current"
-          ? await getCurrentCollectorBookings({ limit: 200 })
-          : await getPastCollectorBookings({ limit: 200 })
+          ? await getCurrentCollectorBookings({ limit: pageSize })
+          : await getPastCollectorBookings({ limit: pageSize })
 
       setRows(response.items.map(mapCollectorBookingToTableRow))
       setApiError(null)
@@ -184,7 +179,7 @@ export default function BookingsPage() {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [rows.length])
+  }, [pageSize, rows.length])
 
   const refreshQueuedSubmissions = React.useCallback(() => {
     setQueuedSubmissions(readSampleSubmissionQueue())
@@ -323,7 +318,7 @@ export default function BookingsPage() {
 
     const onTouchStart = (event: TouchEvent) => {
       if (isBookingFormOpen || isRefreshing) return
-      if (window.scrollY > 0) return
+      if ((scrollViewportRef.current?.scrollTop ?? 0) > 0) return
       startY = event.touches[0]?.clientY ?? null
       latestDistance = 0
       setPullDistance(0)
@@ -332,7 +327,7 @@ export default function BookingsPage() {
 
     const onTouchMove = (event: TouchEvent) => {
       if (startY === null || isBookingFormOpen || isRefreshing) return
-      if (window.scrollY > 0) return
+      if ((scrollViewportRef.current?.scrollTop ?? 0) > 0) return
 
       const currentY = event.touches[0]?.clientY ?? startY
       const delta = currentY - startY
@@ -451,9 +446,9 @@ export default function BookingsPage() {
   )
 
   return (
-    <SidebarProvider>
+    <SidebarProvider className="h-svh overflow-hidden">
       <AppSidebar />
-      <SidebarInset className="overflow-x-hidden">
+      <SidebarInset className="min-h-0 overflow-hidden">
         <header className="safe-area-top bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-30 flex min-h-14 shrink-0 items-center border-b border-border/70 backdrop-blur md:static md:h-16 md:min-h-16 md:bg-transparent md:pt-0 md:backdrop-blur-none">
           <div className="flex w-full min-w-0 items-center gap-2 px-3 py-2 sm:px-4 md:py-0">
             <SidebarTrigger className="-ml-1 h-10 w-10 rounded-full md:h-7 md:w-7" />
@@ -482,156 +477,106 @@ export default function BookingsPage() {
             </Breadcrumb>
           </div>
         </header>
-        <div className="flex flex-1 flex-col gap-4 pt-3 pb-[calc(6.25rem+env(safe-area-inset-bottom))] md:gap-5 md:py-6 md:pb-6">
-          <div className="mobile-page-shell space-y-3">
-            {pullDistance > 0 ? (
-              <div className="flex items-center justify-center md:hidden">
-                <Badge variant="outline" className="gap-2">
-                  <RefreshCw
-                    className={cn("size-3.5", isPullReady && "animate-spin")}
-                  />
-                  {isPullReady ? "Release to refresh" : "Pull to refresh"}
-                </Badge>
-              </div>
-            ) : null}
-            <div className="grid grid-cols-[1fr_auto] items-center gap-2 md:hidden">
-              <div className="bg-muted/60 flex items-center rounded-xl p-1.5">
-                {bookingBuckets.map((bucket) => (
-                  <Button
-                    key={bucket.value}
-                    size="sm"
-                    className="mobile-touch-target h-10 flex-1 rounded-lg text-sm font-semibold"
-                    variant={activeBucket === bucket.value ? "default" : "ghost"}
-                    onClick={() => {
-                      void triggerHapticFeedback("light")
-                      setActiveBucket(bucket.value)
-                    }}
-                  >
-                    {bucket.label}
-                  </Button>
-                ))}
-              </div>
-              <Button
-                size="icon"
-                variant="outline"
-                className="mobile-touch-target h-10 w-10 rounded-xl"
-                disabled={isRefreshing}
-                onClick={() => {
-                  void triggerHapticFeedback("light")
-                  void loadBookings(activeBucket)
-                  void processQueuedSubmissions()
-                }}
-              >
-                <RefreshCw className={cn("size-4", isRefreshing && "animate-spin")} />
-                <span className="sr-only">Refresh bookings</span>
-              </Button>
-            </div>
-
-            <div className="hidden flex-wrap items-center gap-2 md:flex">
-              {bookingBuckets.map((bucket) => (
-                <Button
-                  key={bucket.value}
-                  size="sm"
-                  variant={activeBucket === bucket.value ? "default" : "outline"}
-                  onClick={() => {
-                    void triggerHapticFeedback("light")
-                    setActiveBucket(bucket.value)
-                  }}
-                >
-                  {bucket.label}
-                </Button>
-              ))}
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={isRefreshing}
-                onClick={() => {
-                  void triggerHapticFeedback("light")
-                  void loadBookings(activeBucket)
-                  void processQueuedSubmissions()
-                }}
-              >
-                <RefreshCw
-                  className={cn("mr-2 size-4", isRefreshing && "animate-spin")}
-                />
-                Refresh
-              </Button>
-            </div>
-            {syncSummary.total > 0 ? (
-              <div className="mobile-surface bg-card/70 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  {syncSummary.pending > 0 ? (
-                    <Badge variant={mapSyncStateToBadgeVariant("PENDING")}>
-                      <CloudOff className="mr-1 size-3.5" />
-                      {sampleSyncStateLabels.PENDING}: {syncSummary.pending}
-                    </Badge>
-                  ) : null}
-                  {(syncSummary.syncing > 0 || isSyncingQueue) ? (
-                    <Badge variant={mapSyncStateToBadgeVariant("SYNCING")}>
-                      <Loader2 className="mr-1 size-3.5 animate-spin" />
-                      {sampleSyncStateLabels.SYNCING}:{" "}
-                      {syncSummary.syncing || 1}
-                    </Badge>
-                  ) : null}
-                  {syncSummary.failed > 0 ? (
-                    <Badge variant={mapSyncStateToBadgeVariant("FAILED")}>
-                      <CloudUpload className="mr-1 size-3.5" />
-                      {sampleSyncStateLabels.FAILED}: {syncSummary.failed}
-                    </Badge>
-                  ) : null}
-                  {syncSummary.synced > 0 ? (
-                    <Badge variant={mapSyncStateToBadgeVariant("SYNCED")}>
-                      <CheckCircle2 className="mr-1 size-3.5" />
-                      {sampleSyncStateLabels.SYNCED}: {syncSummary.synced}
-                    </Badge>
-                  ) : null}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="ml-auto w-full sm:w-auto"
-                    disabled={isSyncingQueue}
-                    onClick={() => {
-                      void processQueuedSubmissions()
-                    }}
-                  >
-                    {isSyncingQueue ? (
-                      <>
-                        <Loader2 className="mr-2 size-4 animate-spin" />
-                        Syncing...
-                      </>
-                    ) : (
-                      "Sync now"
-                    )}
-                  </Button>
+        <div ref={scrollViewportRef} className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 pt-3 pb-[calc(6.25rem+env(safe-area-inset-bottom))] md:gap-5 md:py-6 md:pb-6">
+            <div className="mobile-page-shell space-y-3">
+              {pullDistance > 0 ? (
+                <div className="flex items-center justify-center md:hidden">
+                  <Badge variant="outline" className="gap-2">
+                    <RefreshCw
+                      className={cn("size-3.5", isPullReady && "animate-spin")}
+                    />
+                    {isPullReady ? "Release to refresh" : "Pull to refresh"}
+                  </Badge>
                 </div>
+              ) : null}
+
+              {syncSummary.total > 0 ? (
+                <div className="mobile-surface bg-card/70 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold tracking-wide">
+                      Offline Sync Status
+                    </p>
+                    <p className="text-muted-foreground text-[11px]">
+                      Total queued: {syncSummary.total}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {syncSummary.pending > 0 ? (
+                      <Badge variant={mapSyncStateToBadgeVariant("PENDING")}>
+                        <CloudOff className="mr-1 size-3.5" />
+                        {sampleSyncStateLabels.PENDING}: {syncSummary.pending}
+                      </Badge>
+                    ) : null}
+                    {(syncSummary.syncing > 0 || isSyncingQueue) ? (
+                      <Badge variant={mapSyncStateToBadgeVariant("SYNCING")}>
+                        <Loader2 className="mr-1 size-3.5 animate-spin" />
+                        {sampleSyncStateLabels.SYNCING}:{" "}
+                        {syncSummary.syncing || 1}
+                      </Badge>
+                    ) : null}
+                    {syncSummary.failed > 0 ? (
+                      <Badge variant={mapSyncStateToBadgeVariant("FAILED")}>
+                        <CloudUpload className="mr-1 size-3.5" />
+                        {sampleSyncStateLabels.FAILED}: {syncSummary.failed}
+                      </Badge>
+                    ) : null}
+                    {syncSummary.synced > 0 ? (
+                      <Badge variant={mapSyncStateToBadgeVariant("SYNCED")}>
+                        <CheckCircle2 className="mr-1 size-3.5" />
+                        {sampleSyncStateLabels.SYNCED}: {syncSummary.synced}
+                      </Badge>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="ml-auto w-full sm:w-auto"
+                      disabled={isSyncingQueue}
+                      onClick={() => {
+                        void processQueuedSubmissions()
+                      }}
+                    >
+                      {isSyncingQueue ? (
+                        <>
+                          <Loader2 className="mr-2 size-4 animate-spin" />
+                          Syncing...
+                        </>
+                      ) : (
+                        "Sync now"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+              {isInitialLoading ? (
+                <p className="text-muted-foreground text-xs">Loading bookings...</p>
+              ) : null}
+            </div>
+            {isInitialLoading ? (
+              <BookingsPageSkeleton />
+            ) : apiError && rows.length === 0 ? (
+              <div className="mobile-page-shell pb-2">
+                <PageErrorState
+                  title={isNetworkError ? "Network Error" : "Unable to load bookings"}
+                  description={apiError}
+                  isNetworkError={isNetworkError}
+                  errorCode={apiErrorCode}
+                  errorId={apiErrorId}
+                  reportIssueHref={pageErrorReportHref}
+                  onRetry={() => {
+                    void triggerHapticFeedback("light")
+                    void loadBookings(activeBucket)
+                    void processQueuedSubmissions()
+                  }}
+                  isRetrying={isRefreshing}
+                />
               </div>
             ) : null}
-            {isInitialLoading ? (
-              <p className="text-muted-foreground text-xs">Loading bookings...</p>
-            ) : null}
-          </div>
-          {isInitialLoading ? (
-            <BookingsPageSkeleton />
-          ) : apiError && rows.length === 0 ? (
-            <div className="mobile-page-shell pb-2">
-              <PageErrorState
-                title={isNetworkError ? "Network Error" : "Unable to load bookings"}
-                description={apiError}
-                isNetworkError={isNetworkError}
-                errorCode={apiErrorCode}
-                errorId={apiErrorId}
-                reportIssueHref={pageErrorReportHref}
-                onRetry={() => {
-                  void triggerHapticFeedback("light")
-                  void loadBookings(activeBucket)
-                  void processQueuedSubmissions()
-                }}
-                isRetrying={isRefreshing}
-              />
-            </div>
-          ) : (
+            {!isInitialLoading && !(apiError && rows.length === 0) ? (
             <>
-              <OverviewCards items={overviewCards} />
+              <div className="hidden lg:block">
+                <OverviewCards items={overviewCards} />
+              </div>
               <BookingsTable
                 rows={rows}
                 onRowSelect={handleRowSelect}
@@ -652,11 +597,13 @@ export default function BookingsPage() {
                   void processQueuedSubmissions()
                 }}
                 isRefreshing={isRefreshing}
+                pageSize={pageSize}
+                onPageSizeChange={setPageSize}
               />
             </>
-          )}
+            ) : null}
+          </div>
         </div>
-        <MobileBottomNav />
       </SidebarInset>
       <BookingFormDialog
         booking={selectedBooking}

@@ -34,7 +34,7 @@ type OverviewCardsProps = {
 
 function OverviewCard({ item }: { item: OverviewCardItem }) {
   return (
-    <Card className="from-primary/10 via-card to-card mobile-surface bg-gradient-to-br">
+    <Card className="rounded-2xl border border-border/70 bg-gradient-to-br from-primary/10 via-card to-card shadow-none">
       <CardHeader className="space-y-2">
         <CardDescription className="text-[11px] uppercase tracking-wide">
           {item.title}

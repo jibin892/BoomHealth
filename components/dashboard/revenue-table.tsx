@@ -3,6 +3,7 @@
 import * as React from "react"
 import { CalendarX2, SearchX } from "lucide-react"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -129,6 +130,10 @@ export function RevenueTable({
     const startIndex = (page - 1) * pageSize
     return filteredRows.slice(startIndex, startIndex + pageSize)
   }, [filteredRows, page, pageSize])
+  const mobileRows = React.useMemo(
+    () => filteredRows.slice(0, page * pageSize),
+    [filteredRows, page, pageSize]
+  )
 
   const rangeStart = filteredRows.length === 0 ? 0 : (page - 1) * pageSize + 1
   const rangeEnd = Math.min(page * pageSize, filteredRows.length)
@@ -140,10 +145,17 @@ export function RevenueTable({
     setSelectedYear("all")
     setSelectedMonth("all")
   }, [])
+  const activeFilterSummary = React.useMemo(() => {
+    const summaries: string[] = []
+    if (selectedYear !== "all") summaries.push(`Year: ${selectedYear}`)
+    if (selectedMonth !== "all") summaries.push(`Month: ${selectedMonth}`)
+    if (search.trim().length > 0) summaries.push(`Query: "${search.trim()}"`)
+    return summaries
+  }, [search, selectedMonth, selectedYear])
 
   return (
     <div className="mobile-page-shell pb-4 lg:pb-6">
-      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/85 sticky top-[calc(env(safe-area-inset-top)+3.35rem)] z-20 -mx-4 mb-3 space-y-3 border-b border-border/70 px-4 pt-2 pb-3 backdrop-blur md:hidden">
+      <div className="mb-3 space-y-3 rounded-2xl border border-border/70 bg-card/85 p-3 shadow-sm md:hidden">
         <div className="space-y-1">
           <h2 className="text-base font-semibold">{title}</h2>
           <p className="text-muted-foreground text-xs">{description}</p>
@@ -154,6 +166,15 @@ export function RevenueTable({
           placeholder="Search month or amount"
           className="mobile-touch-target h-11 rounded-xl"
         />
+        {activeFilterSummary.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {activeFilterSummary.map((item) => (
+              <Badge key={item} variant="outline" className="text-[11px]">
+                {item}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
         {hasFilters ? (
           <Button
             variant="outline"
@@ -245,6 +266,15 @@ export function RevenueTable({
                 </SelectContent>
               </Select>
             </div>
+            {activeFilterSummary.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {activeFilterSummary.map((item) => (
+                  <Badge key={item} variant="outline" className="text-[11px]">
+                    {item}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
             <p className="text-muted-foreground text-xs">
               Showing {filteredRows.length} of {rows.length} months
             </p>
@@ -279,7 +309,7 @@ export function RevenueTable({
           ) : (
             <>
               <div className="space-y-3 md:hidden">
-                {paginatedRows.map((row) => (
+                {mobileRows.map((row) => (
                   <div
                     key={row.month}
                     className="mobile-surface p-4 transition-transform active:scale-[0.995]"
@@ -306,36 +336,53 @@ export function RevenueTable({
               </div>
 
               <div className="hidden md:block">
-                <Table className="min-w-[700px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Month</TableHead>
-                      <TableHead className="text-right">Bookings</TableHead>
-                      <TableHead className="text-right">Collected</TableHead>
-                      <TableHead className="text-right">Pending</TableHead>
-                      <TableHead className="text-right">Net</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paginatedRows.map((row) => (
-                      <TableRow key={row.month}>
-                        <TableCell className="font-medium">{row.month}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {row.bookings}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatCurrency(row.collected)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatCurrency(row.pending)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatCurrency(row.net)}
-                        </TableCell>
+                <div className="overflow-hidden rounded-2xl border border-border/70 bg-card/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                  <Table className="min-w-[760px]">
+                    <TableHeader className="bg-muted/30">
+                      <TableRow className="border-b-border/70 hover:bg-transparent">
+                        <TableHead className="h-11 text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/95">
+                          Month
+                        </TableHead>
+                        <TableHead className="h-11 text-right text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/95">
+                          Bookings
+                        </TableHead>
+                        <TableHead className="h-11 text-right text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/95">
+                          Collected
+                        </TableHead>
+                        <TableHead className="h-11 text-right text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/95">
+                          Pending
+                        </TableHead>
+                        <TableHead className="h-11 text-right text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/95">
+                          Net
+                        </TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedRows.map((row) => (
+                        <TableRow
+                          key={row.month}
+                          className="border-b-border/60 even:bg-muted/10 hover:bg-primary/6"
+                        >
+                          <TableCell className="py-3.5 font-semibold tracking-tight">
+                            {row.month}
+                          </TableCell>
+                          <TableCell className="py-3.5 text-right tabular-nums">
+                            {row.bookings}
+                          </TableCell>
+                          <TableCell className="py-3.5 text-right font-medium tabular-nums">
+                            {formatCurrency(row.collected)}
+                          </TableCell>
+                          <TableCell className="py-3.5 text-right tabular-nums text-muted-foreground">
+                            {formatCurrency(row.pending)}
+                          </TableCell>
+                          <TableCell className="py-3.5 text-right font-semibold tabular-nums">
+                            {formatCurrency(row.net)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </>
           )}

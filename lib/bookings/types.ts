@@ -18,12 +18,22 @@ export type BookingTableRow = {
   bookingId: string
   apiBookingId?: number
   orderId?: string | null
+  customerPhone?: string | null
   bookingStatusRaw?: string
   orderStatus?: string | null
   resourceType?: string | null
   resourceId?: string | null
+  locationId?: string | null
   locationLabel?: string | null
   locationAddress?: string | null
+  locationLine1?: string | null
+  locationLine2?: string | null
+  locationBuildingName?: string | null
+  locationFloorNumber?: string | null
+  locationArea?: string | null
+  locationCity?: string | null
+  locationEmirate?: string | null
+  locationCountry?: string | null
   locationLatitude?: number | null
   locationLongitude?: number | null
   startAt?: string

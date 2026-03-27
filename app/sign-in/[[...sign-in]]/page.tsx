@@ -13,19 +13,27 @@ export default async function SignInPage() {
 
   return (
     <AuthCardShell contentClassName="max-w-md">
-      <SignIn
-        path="/sign-in"
-        routing="path"
-        signUpUrl="/sign-in"
-        appearance={{
-          elements: {
-            footerAction: "hidden",
-            footerActionLink: "hidden",
-          },
-        }}
-        forceRedirectUrl="/dashboard/bookings"
-        fallbackRedirectUrl="/dashboard/bookings"
-      />
+      <div className="mx-auto flex w-full max-w-[26rem] flex-col items-center space-y-3">
+        <div className="space-y-1.5 text-center">
+          <p className="text-base font-semibold">DarDoc Collector Dashboard</p>
+          <p className="text-muted-foreground text-sm leading-5">
+            Sign in to manage bookings, patient updates, and sample collection.
+          </p>
+        </div>
+        <SignIn
+          path="/sign-in"
+          routing="path"
+          signUpUrl="/sign-up"
+          appearance={{
+            elements: {
+              rootBox: "w-full",
+              cardBox: "w-full",
+            },
+          }}
+          forceRedirectUrl="/dashboard/bookings"
+          fallbackRedirectUrl="/dashboard/bookings"
+        />
+      </div>
     </AuthCardShell>
   )
 }

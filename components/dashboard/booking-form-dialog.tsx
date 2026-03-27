@@ -2,11 +2,16 @@
 
 import * as React from "react"
 import {
+  AlertTriangle,
+  Camera,
+  CheckCircle2,
   ClipboardList,
   ExternalLink,
   FlaskConical,
+  ImageUp,
   Loader2,
   MapPin,
+  Phone,
   RotateCcw,
   UserRound,
   X,
@@ -37,6 +42,7 @@ import {
 } from "@/components/ui/breadcrumb"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   Card,
   CardContent,
@@ -48,11 +54,17 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
+  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Sidebar,
   SidebarContent,
@@ -88,8 +100,6 @@ export type SubmitSampleCollectionResult = {
   queueId?: string
 }
 
-type IdDocumentType = "passport" | "eid"
-
 type BookingFormDialogProps = {
   booking: BookingTableRow | null
   open: boolean
@@ -116,6 +126,7 @@ type ProcessedImageDocument = {
   file: File
   previewDataUrl: string
   croppedImageBase64: string
+  documentType: OpenAiDocumentType
   extractedData: DocumentExtractionData
   validation: DocumentValidation
   confidenceScore: number
@@ -123,18 +134,84 @@ type ProcessedImageDocument = {
 
 type DocumentScanSource = "upload" | "capture"
 
+type CropArea = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 type SampleErrorDetails = {
   reason: string | null
   retryable: boolean
   errorId: string | null
 }
 
+type DetailListItem = {
+  label: string
+  value: React.ReactNode
+}
+
 const sectionItems = [
-  { key: "booking" as const, name: "Booking Details", icon: ClipboardList },
-  { key: "patients" as const, name: "Patient Details", icon: UserRound },
-  { key: "location" as const, name: "Location Details", icon: MapPin },
-  { key: "sample" as const, name: "Sample Collection", icon: FlaskConical },
+  {
+    key: "booking" as const,
+    name: "Booking Details",
+    description: "ID, status, and schedule snapshot",
+    icon: ClipboardList,
+  },
+  {
+    key: "patients" as const,
+    name: "Patient Details",
+    description: "Edit patient demographics and IDs",
+    icon: UserRound,
+  },
+  {
+    key: "location" as const,
+    name: "Location Details",
+    description: "Visit destination and route context",
+    icon: MapPin,
+  },
+  {
+    key: "sample" as const,
+    name: "Sample Collection",
+    description: "Document scan and submit workflow",
+    icon: FlaskConical,
+  },
 ]
+
+function mergePatientDocumentsIntoUpdates(
+  baseUpdates: BookingPatientUpdate[],
+  forms: BookingPatientForm[],
+  documents: Record<string, ProcessedImageDocument | null>
+) {
+  const updatesByPatientId = new Map(
+    baseUpdates.map((update) => [update.currentPatientId, { ...update }])
+  )
+
+  for (const patient of forms) {
+    if (patient.nationalId.trim()) continue
+    const document = documents[patient.currentPatientId]
+    const documentNumber = document?.extractedData.documentNumber?.trim()
+    if (!document || !documentNumber) continue
+
+    const existing = updatesByPatientId.get(patient.currentPatientId) ?? {
+      currentPatientId: patient.currentPatientId,
+    }
+
+    updatesByPatientId.set(patient.currentPatientId, {
+      ...existing,
+      nationalId: documentNumber,
+      ...(document.extractedData.fullName?.trim()
+        ? { name: document.extractedData.fullName.trim() }
+        : {}),
+      ...(document.extractedData.gender?.trim()
+        ? { gender: normalizeExtractedGender(document.extractedData.gender) }
+        : {}),
+    })
+  }
+
+  return Array.from(updatesByPatientId.values())
+}
 
 function mapPatientsToForms(patients: BookingPatient[]): BookingPatientForm[] {
   return patients.map((patient) => ({
@@ -156,6 +233,17 @@ function parseAge(value: string) {
   if (Number.isNaN(parsed)) return undefined
 
   return parsed
+}
+
+function normalizeExtractedGender(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return ""
+
+  const lowered = trimmed.toLowerCase()
+  if (lowered === "m" || lowered === "male") return "Male"
+  if (lowered === "f" || lowered === "female") return "Female"
+
+  return trimmed
 }
 
 function buildPatientUpdates(
@@ -202,32 +290,6 @@ function buildPatientUpdates(
       return Object.keys(update).length > 1 ? update : null
     })
     .filter((item): item is BookingPatientUpdate => Boolean(item))
-}
-
-function mergeMissingNationalIdsFromDocument(
-  baseUpdates: BookingPatientUpdate[],
-  missingPatientIds: string[],
-  documentNumber: string
-) {
-  if (!documentNumber || missingPatientIds.length === 0) {
-    return baseUpdates
-  }
-
-  const updatesByPatientId = new Map(
-    baseUpdates.map((update) => [update.currentPatientId, { ...update }])
-  )
-
-  for (const patientId of missingPatientIds) {
-    const existing = updatesByPatientId.get(patientId) ?? {
-      currentPatientId: patientId,
-    }
-    updatesByPatientId.set(patientId, {
-      ...existing,
-      nationalId: documentNumber,
-    })
-  }
-
-  return Array.from(updatesByPatientId.values())
 }
 
 function getSourcePatients(booking: BookingTableRow | null) {
@@ -352,6 +414,347 @@ function toPreviewDataUrl(base64: string) {
   return `data:${mimeType};base64,${normalized}`
 }
 
+const DOCUMENT_CROP_ASPECTS = [1.42, 1.586]
+
+function getDocumentCropAspect(detectedAspect: number) {
+  const fallbackAspect = DOCUMENT_CROP_ASPECTS[0]
+  if (!Number.isFinite(detectedAspect) || detectedAspect <= 0) return fallbackAspect
+
+  let bestAspect = fallbackAspect
+  let smallestDiff = Number.POSITIVE_INFINITY
+
+  for (const candidate of DOCUMENT_CROP_ASPECTS) {
+    const diff = Math.abs(candidate - detectedAspect)
+    if (diff < smallestDiff) {
+      smallestDiff = diff
+      bestAspect = candidate
+    }
+  }
+
+  return bestAspect
+}
+
+function clampCroppedArea(
+  area: CropArea,
+  imageWidth: number,
+  imageHeight: number
+) {
+  const x = Math.max(0, Math.floor(area.x))
+  const y = Math.max(0, Math.floor(area.y))
+  const maxWidth = Math.max(1, imageWidth - x)
+  const maxHeight = Math.max(1, imageHeight - y)
+  const width = Math.max(1, Math.min(Math.floor(area.width), maxWidth))
+  const height = Math.max(1, Math.min(Math.floor(area.height), maxHeight))
+  return { x, y, width, height }
+}
+
+function fitAreaToAspect(
+  area: CropArea,
+  imageWidth: number,
+  imageHeight: number,
+  targetAspect: number
+) {
+  const normalized = clampCroppedArea(area, imageWidth, imageHeight)
+  const currentAspect = normalized.width / normalized.height
+
+  if (!Number.isFinite(currentAspect) || !Number.isFinite(targetAspect)) {
+    return normalized
+  }
+
+  if (Math.abs(currentAspect - targetAspect) <= 0.08) {
+    return normalized
+  }
+
+  if (currentAspect > targetAspect) {
+    const targetHeight = Math.round(normalized.width / targetAspect)
+    if (targetHeight <= imageHeight) {
+      const centeredY = Math.round(normalized.y - (targetHeight - normalized.height) / 2)
+      return clampCroppedArea(
+        {
+          x: normalized.x,
+          y: centeredY,
+          width: normalized.width,
+          height: targetHeight,
+        },
+        imageWidth,
+        imageHeight
+      )
+    }
+
+    const targetWidth = Math.round(normalized.height * targetAspect)
+    const centeredX = Math.round(normalized.x + (normalized.width - targetWidth) / 2)
+    return clampCroppedArea(
+      {
+        x: centeredX,
+        y: normalized.y,
+        width: targetWidth,
+        height: normalized.height,
+      },
+      imageWidth,
+      imageHeight
+    )
+  }
+
+  const targetWidth = Math.round(normalized.height * targetAspect)
+  if (targetWidth <= imageWidth) {
+    const centeredX = Math.round(normalized.x - (targetWidth - normalized.width) / 2)
+    return clampCroppedArea(
+      {
+        x: centeredX,
+        y: normalized.y,
+        width: targetWidth,
+        height: normalized.height,
+      },
+      imageWidth,
+      imageHeight
+    )
+  }
+
+  const targetHeight = Math.round(normalized.width / targetAspect)
+  const centeredY = Math.round(normalized.y + (normalized.height - targetHeight) / 2)
+  return clampCroppedArea(
+    {
+      x: normalized.x,
+      y: centeredY,
+      width: normalized.width,
+      height: targetHeight,
+    },
+    imageWidth,
+    imageHeight
+  )
+}
+
+async function detectAutoDocumentCropArea(file: File): Promise<CropArea | null> {
+  if (typeof window === "undefined") return null
+
+  const sourceUrl = URL.createObjectURL(file)
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const candidate = new Image()
+      candidate.onload = () => resolve(candidate)
+      candidate.onerror = () =>
+        reject(new Error("Unable to load image for auto-cropping."))
+      candidate.src = sourceUrl
+    })
+
+    const maxSide = 1400
+    const longestSide = Math.max(image.naturalWidth, image.naturalHeight)
+    const scale = longestSide > maxSide ? maxSide / longestSide : 1
+    const width = Math.max(1, Math.round(image.naturalWidth * scale))
+    const height = Math.max(1, Math.round(image.naturalHeight * scale))
+
+    const canvas = document.createElement("canvas")
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext("2d", { willReadFrequently: true })
+    if (!context) return null
+
+    context.drawImage(image, 0, 0, width, height)
+    const imageData = context.getImageData(0, 0, width, height)
+    const { data } = imageData
+
+    const border = Math.max(6, Math.round(Math.min(width, height) * 0.04))
+    let borderCount = 0
+    let rSum = 0
+    let gSum = 0
+    let bSum = 0
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const isBorderPixel =
+          x < border || y < border || x >= width - border || y >= height - border
+        if (!isBorderPixel) continue
+        const index = (y * width + x) * 4
+        rSum += data[index]
+        gSum += data[index + 1]
+        bSum += data[index + 2]
+        borderCount += 1
+      }
+    }
+
+    if (borderCount === 0) return null
+
+    const meanR = rSum / borderCount
+    const meanG = gSum / borderCount
+    const meanB = bSum / borderCount
+
+    let borderDiffSum = 0
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const isBorderPixel =
+          x < border || y < border || x >= width - border || y >= height - border
+        if (!isBorderPixel) continue
+        const index = (y * width + x) * 4
+        const diff =
+          (Math.abs(data[index] - meanR) +
+            Math.abs(data[index + 1] - meanG) +
+            Math.abs(data[index + 2] - meanB)) /
+          3
+        borderDiffSum += diff
+      }
+    }
+
+    const borderDiffMean = borderDiffSum / borderCount
+    const threshold = Math.max(20, borderDiffMean * 3.3)
+    const rowCounts = new Uint16Array(height)
+    const colCounts = new Uint16Array(width)
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const index = (y * width + x) * 4
+        const alpha = data[index + 3]
+        if (alpha < 12) continue
+
+        const diff =
+          (Math.abs(data[index] - meanR) +
+            Math.abs(data[index + 1] - meanG) +
+            Math.abs(data[index + 2] - meanB)) /
+          3
+
+        if (diff >= threshold) {
+          rowCounts[y] += 1
+          colCounts[x] += 1
+        }
+      }
+    }
+
+    const rowHitThreshold = Math.max(12, Math.round(width * 0.085))
+    const colHitThreshold = Math.max(12, Math.round(height * 0.085))
+
+    let top = -1
+    for (let y = 0; y < height; y += 1) {
+      if (rowCounts[y] >= rowHitThreshold) {
+        top = y
+        break
+      }
+    }
+
+    let bottom = -1
+    for (let y = height - 1; y >= 0; y -= 1) {
+      if (rowCounts[y] >= rowHitThreshold) {
+        bottom = y
+        break
+      }
+    }
+
+    let left = -1
+    for (let x = 0; x < width; x += 1) {
+      if (colCounts[x] >= colHitThreshold) {
+        left = x
+        break
+      }
+    }
+
+    let right = -1
+    for (let x = width - 1; x >= 0; x -= 1) {
+      if (colCounts[x] >= colHitThreshold) {
+        right = x
+        break
+      }
+    }
+
+    if (top < 0 || left < 0 || right <= left || bottom <= top) {
+      return null
+    }
+
+    const padding = Math.max(4, Math.round(Math.min(width, height) * 0.015))
+    const coarseArea = clampCroppedArea(
+      {
+        x: left - padding,
+        y: top - padding,
+        width: right - left + 1 + padding * 2,
+        height: bottom - top + 1 + padding * 2,
+      },
+      width,
+      height
+    )
+
+    const cropCoverage = (coarseArea.width * coarseArea.height) / (width * height)
+    if (cropCoverage < 0.16 || cropCoverage > 0.97) {
+      return null
+    }
+
+    const coarseAspect = coarseArea.width / coarseArea.height
+    const aspectAdjustedArea = fitAreaToAspect(
+      coarseArea,
+      width,
+      height,
+      getDocumentCropAspect(coarseAspect)
+    )
+
+    return clampCroppedArea(
+      {
+        x: aspectAdjustedArea.x / scale,
+        y: aspectAdjustedArea.y / scale,
+        width: aspectAdjustedArea.width / scale,
+        height: aspectAdjustedArea.height / scale,
+      },
+      image.naturalWidth,
+      image.naturalHeight
+    )
+  } catch {
+    return null
+  } finally {
+    URL.revokeObjectURL(sourceUrl)
+  }
+}
+
+async function toCroppedImageFile(file: File, croppedAreaPixels: CropArea | null) {
+  if (typeof window === "undefined") {
+    throw new Error("Image crop is not supported in this environment.")
+  }
+
+  const sourceUrl = URL.createObjectURL(file)
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const candidate = new Image()
+      candidate.onload = () => resolve(candidate)
+      candidate.onerror = () => reject(new Error("Unable to load image for cropping."))
+      candidate.src = sourceUrl
+    })
+
+    const fallbackArea: CropArea = {
+      x: 0,
+      y: 0,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+    }
+    const sourceArea = croppedAreaPixels || fallbackArea
+    const { x, y, width, height } = clampCroppedArea(
+      sourceArea,
+      image.naturalWidth,
+      image.naturalHeight
+    )
+
+    const canvas = document.createElement("canvas")
+    canvas.width = width
+    canvas.height = height
+
+    const context = canvas.getContext("2d")
+    if (!context) {
+      throw new Error("Unable to initialize image crop canvas.")
+    }
+
+    context.drawImage(image, x, y, width, height, 0, 0, width, height)
+
+    const croppedBlob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/jpeg", 0.92)
+    })
+
+    if (!croppedBlob) {
+      throw new Error("Unable to generate cropped image.")
+    }
+
+    const baseName = file.name.replace(/\.[^.]+$/, "") || "document"
+    return new File([croppedBlob], `${baseName}-cropped.jpg`, {
+      type: "image/jpeg",
+      lastModified: Date.now(),
+    })
+  } finally {
+    URL.revokeObjectURL(sourceUrl)
+  }
+}
+
 function PreviewImage({
   src,
   label,
@@ -451,10 +854,36 @@ function PreviewImage({
   )
 }
 
+function DetailRows({ items }: { items: DetailListItem[] }) {
+  return (
+    <dl className="divide-y divide-border/70">
+      {items.map((item) => (
+        <div
+          key={item.label}
+          className="grid gap-1.5 px-4 py-3 sm:grid-cols-[170px_1fr] sm:items-start sm:gap-4"
+        >
+          <dt className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.14em]">
+            {item.label}
+          </dt>
+          <dd className="text-sm leading-relaxed font-medium break-words whitespace-normal sm:text-base">
+            {item.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function sanitizePhoneForTel(value?: string | null) {
+  if (!value) return null
+  const sanitized = value.replace(/[^\d+]/g, "")
+  return sanitized || null
+}
+
 function getProcessingLabel(documentType: OpenAiDocumentType | null) {
-  if (documentType === "PASSPORT") return "Scanning passport front side"
-  if (documentType === "EID_FRONT") return "Scanning Emirates ID front side"
-  if (documentType === "EID_BACK") return "Scanning Emirates ID back side"
+  if (documentType === "PASSPORT" || documentType === "EID_FRONT") {
+    return "Scanning document front side"
+  }
   return "Processing document"
 }
 
@@ -476,15 +905,9 @@ function ProcessingDocumentState({
           <p className="text-muted-foreground text-xs">
             {getProcessingLabel(documentType)}
           </p>
-        </div>
-      </div>
-      <div className="mt-3 grid gap-1.5 text-xs text-muted-foreground sm:grid-cols-3">
-        <div className="rounded-md bg-background/70 px-2 py-1">Detecting edges</div>
-        <div className="rounded-md bg-background/70 px-2 py-1">
-          Cleaning background
-        </div>
-        <div className="rounded-md bg-background/70 px-2 py-1">
-          Preparing preview
+          <p className="text-muted-foreground text-xs">
+            Please wait while we scan and prepare the document.
+          </p>
         </div>
       </div>
     </div>
@@ -500,28 +923,21 @@ export function BookingFormDialog({
 }: BookingFormDialogProps) {
   const [activeSection, setActiveSection] = React.useState<DialogSection>("booking")
   const [patientForms, setPatientForms] = React.useState<BookingPatientForm[]>([])
-  const [showSampleCollection, setShowSampleCollection] = React.useState(false)
   const [isCaptureDevice, setIsCaptureDevice] = React.useState(false)
-  const [selectedDocumentType, setSelectedDocumentType] =
-    React.useState<IdDocumentType>("passport")
-  const [passportFrontDocument, setPassportFrontDocument] =
-    React.useState<ProcessedImageDocument | null>(null)
-  const [eidFrontDocument, setEidFrontDocument] =
-    React.useState<ProcessedImageDocument | null>(null)
-  const [eidBackDocument, setEidBackDocument] =
-    React.useState<ProcessedImageDocument | null>(null)
+  const [patientDocuments, setPatientDocuments] = React.useState<
+    Record<string, ProcessedImageDocument | null>
+  >({})
+  const [activeUploadPatientId, setActiveUploadPatientId] = React.useState<string | null>(null)
   const [processingDocumentType, setProcessingDocumentType] = React.useState<
     OpenAiDocumentType | null
   >(null)
   const [hasCameraPermission, setHasCameraPermission] = React.useState(false)
   const [isRequestingCameraPermission, setIsRequestingCameraPermission] =
     React.useState(false)
-  const [isSavingPatients, setIsSavingPatients] = React.useState(false)
+  const [submittingPatientId, setSubmittingPatientId] = React.useState<string | null>(null)
+  const [patientActionMessage, setPatientActionMessage] = React.useState<string | null>(null)
+  const [patientActionError, setPatientActionError] = React.useState<string | null>(null)
   const [isSubmittingSample, setIsSubmittingSample] = React.useState(false)
-  const [saveSuccessMessage, setSaveSuccessMessage] = React.useState<string | null>(
-    null
-  )
-  const [saveErrorMessage, setSaveErrorMessage] = React.useState<string | null>(null)
   const [sampleSuccessMessage, setSampleSuccessMessage] = React.useState<
     string | null
   >(null)
@@ -530,40 +946,39 @@ export function BookingFormDialog({
   >(null)
   const [sampleErrorDetails, setSampleErrorDetails] =
     React.useState<SampleErrorDetails | null>(null)
+  const [isSampleSubmitConfirmOpen, setIsSampleSubmitConfirmOpen] =
+    React.useState(false)
   const [lastDocumentScan, setLastDocumentScan] = React.useState<{
-    documentType: OpenAiDocumentType
     source: DocumentScanSource
+    patientId: string
   } | null>(null)
+  const wasOpenRef = React.useRef(false)
 
   const passportUploadInputRef = React.useRef<HTMLInputElement>(null)
-  const eidFrontUploadInputRef = React.useRef<HTMLInputElement>(null)
-  const eidBackUploadInputRef = React.useRef<HTMLInputElement>(null)
   const passportCaptureInputRef = React.useRef<HTMLInputElement>(null)
-  const eidFrontCaptureInputRef = React.useRef<HTMLInputElement>(null)
-  const eidBackCaptureInputRef = React.useRef<HTMLInputElement>(null)
 
   const sourcePatients = React.useMemo(() => getSourcePatients(booking), [booking])
   const isDocumentProcessing = processingDocumentType !== null
+  const bookingStatus = booking?.bookingStatusRaw || "UNKNOWN"
+  const isCompletedBooking =
+    bookingStatus === "FULFILLED" || bookingStatus === "CANCELLED"
 
   React.useEffect(() => {
     if (open) {
-      setActiveSection("booking")
       setPatientForms(mapPatientsToForms(sourcePatients))
-      setShowSampleCollection(false)
-      setSelectedDocumentType("passport")
-      setPassportFrontDocument(null)
-      setEidFrontDocument(null)
-      setEidBackDocument(null)
+      setPatientDocuments({})
+      setActiveUploadPatientId(null)
       setProcessingDocumentType(null)
       setHasCameraPermission(false)
       setIsRequestingCameraPermission(false)
-      setIsSavingPatients(false)
+      setSubmittingPatientId(null)
+      setPatientActionMessage(null)
+      setPatientActionError(null)
       setIsSubmittingSample(false)
-      setSaveSuccessMessage(null)
-      setSaveErrorMessage(null)
       setSampleSuccessMessage(null)
       setSampleErrorMessage(null)
       setSampleErrorDetails(null)
+      setIsSampleSubmitConfirmOpen(false)
       setLastDocumentScan(null)
     }
   }, [open, sourcePatients])
@@ -596,41 +1011,70 @@ export function BookingFormDialog({
 
   const hasAllNationalIds = missingNationalIdPatientIds.length === 0
   const requiresDocumentProof = !hasAllNationalIds
+  const uploadedRequiredDocumentCount = React.useMemo(
+    () =>
+      missingNationalIdPatientIds.filter((patientId) => Boolean(patientDocuments[patientId]))
+        .length,
+    [missingNationalIdPatientIds, patientDocuments]
+  )
 
-  const isSampleDocumentReady = React.useMemo(() => {
-    if (selectedDocumentType === "passport") {
-      return Boolean(passportFrontDocument)
-    }
+  const documentEntries = React.useMemo(
+    () =>
+      Object.entries(patientDocuments).filter(
+        (entry): entry is [string, ProcessedImageDocument] => Boolean(entry[1])
+      ),
+    [patientDocuments]
+  )
+  const activeFrontDocument = documentEntries[0]?.[1] ?? null
+  const isSampleDocumentReady =
+    !requiresDocumentProof ||
+    uploadedRequiredDocumentCount === missingNationalIdPatientIds.length
 
-    return Boolean(eidFrontDocument && eidBackDocument)
-  }, [
-    eidBackDocument,
-    eidFrontDocument,
-    passportFrontDocument,
-    selectedDocumentType,
-  ])
-
-  const submissionDocumentFile = React.useMemo(() => {
-    return selectedDocumentType === "passport"
-      ? passportFrontDocument?.file
-      : eidFrontDocument?.file
-  }, [eidFrontDocument, passportFrontDocument, selectedDocumentType])
+  const submissionDocumentFile = React.useMemo(
+    () => activeFrontDocument?.file,
+    [activeFrontDocument]
+  )
 
   const croppedDocumentImageBase64List = React.useMemo(() => {
-    const values =
-      selectedDocumentType === "passport"
-        ? [passportFrontDocument?.croppedImageBase64]
-        : [eidFrontDocument?.croppedImageBase64, eidBackDocument?.croppedImageBase64]
+    const values = documentEntries.map(([, document]) => document.croppedImageBase64)
 
     return values.filter(
       (value): value is string => typeof value === "string" && value.trim().length > 0
     )
   }, [
-    eidBackDocument?.croppedImageBase64,
-    eidFrontDocument?.croppedImageBase64,
-    passportFrontDocument?.croppedImageBase64,
-    selectedDocumentType,
+    documentEntries,
   ])
+  const invalidRequiredEidDocument = React.useMemo(
+    () =>
+      missingNationalIdPatientIds.find((patientId) => {
+        const document = patientDocuments[patientId]
+        return (
+          document?.documentType === "EID_FRONT" &&
+          !document.validation.startsWith784
+        )
+      }) ?? null,
+    [missingNationalIdPatientIds, patientDocuments]
+  )
+  const orderedSectionItems = React.useMemo(() => {
+    const order: DialogSection[] = requiresDocumentProof
+      ? ["patients", "sample", "booking", "location"]
+      : isCompletedBooking
+      ? ["booking", "sample", "patients", "location"]
+      : ["sample", "booking", "patients", "location"]
+
+    return order
+      .map((key) => sectionItems.find((item) => item.key === key) ?? null)
+      .filter((item): item is (typeof sectionItems)[number] => Boolean(item))
+  }, [isCompletedBooking, requiresDocumentProof])
+  const primarySection = orderedSectionItems[0]?.key ?? "booking"
+
+  React.useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setActiveSection(primarySection)
+    }
+
+    wasOpenRef.current = open
+  }, [open, primarySection])
 
   const requestCameraPermission = React.useCallback(async () => {
     if (!isCaptureDevice) {
@@ -695,32 +1139,189 @@ export function BookingFormDialog({
     [requestCameraPermission]
   )
 
-  const clearProcessedDocument = React.useCallback(
-    (documentType: OpenAiDocumentType) => {
-      if (documentType === "PASSPORT") {
-        setPassportFrontDocument(null)
-        return
+  const applyExtractedDataToPatient = React.useCallback(
+    (patientId: string, extractedData: DocumentExtractionData) => {
+      const extractedName = extractedData.fullName.trim()
+      const extractedGender = normalizeExtractedGender(extractedData.gender)
+      const extractedDocumentNumber = extractedData.documentNumber.trim()
+
+      if (!extractedName && !extractedGender && !extractedDocumentNumber) {
+        return null
       }
 
-      if (documentType === "EID_FRONT") {
-        setEidFrontDocument(null)
-        return
+      if (patientForms.length === 0) {
+        return null
       }
 
-      setEidBackDocument(null)
+      const nextForms = [...patientForms]
+      const targetIndex = nextForms.findIndex(
+        (patient) => patient.currentPatientId === patientId
+      )
+
+      if (targetIndex < 0) {
+        return null
+      }
+
+      const target = nextForms[targetIndex]
+      const updated: BookingPatientForm = { ...target }
+      let didUpdate = false
+
+      if (extractedDocumentNumber) {
+        updated.nationalId = extractedDocumentNumber
+        didUpdate = true
+      }
+
+      if (extractedName) {
+        updated.name = extractedName
+        didUpdate = true
+      }
+
+      if (extractedGender) {
+        updated.gender = extractedGender
+        didUpdate = true
+      }
+
+      if (!didUpdate) {
+        return null
+      }
+
+      nextForms[targetIndex] = updated
+      setPatientForms(nextForms)
+
+      return {
+        patientLabel: updated.name.trim() || `Patient ${targetIndex + 1}`,
+      }
     },
-    []
+    [patientForms]
+  )
+
+  const clearProcessedDocument = React.useCallback((patientId?: string) => {
+    if (!patientId) {
+      setPatientDocuments({})
+      return
+    }
+
+    setPatientDocuments((current) => ({
+      ...current,
+      [patientId]: null,
+    }))
+  }, [])
+
+  const processDocumentFromCroppedFile = React.useCallback(
+    async (patientId: string, file: File) => {
+      if (!file.type.startsWith("image/")) {
+        setSampleErrorMessage("Only image files are supported.")
+        setSampleErrorDetails({
+          reason: "unsupported_file_type",
+          retryable: false,
+          errorId: null,
+        })
+        return
+      }
+
+      if (file.size > 8 * 1024 * 1024) {
+        setSampleErrorMessage("Image is too large. Maximum allowed size is 8MB.")
+        setSampleErrorDetails({
+          reason: "file_too_large",
+          retryable: false,
+          errorId: null,
+        })
+        return
+      }
+
+      setSampleErrorMessage(null)
+      setSampleSuccessMessage(null)
+      setSampleErrorDetails(null)
+      setProcessingDocumentType("PASSPORT")
+
+      try {
+        const processed = await processDocumentImage({
+          file,
+        })
+        const detectedDocumentType = processed.documentType
+
+        const normalizedDocument: ProcessedImageDocument = {
+          file,
+          previewDataUrl: toPreviewDataUrl(processed.croppedDocumentImageBase64),
+          croppedImageBase64: processed.croppedDocumentImageBase64,
+          documentType: processed.documentType,
+          extractedData: processed.extractedData,
+          validation: processed.validation,
+          confidenceScore: processed.confidenceScore,
+        }
+
+        if (detectedDocumentType === "PASSPORT") {
+          setPatientDocuments((current) => ({
+            ...current,
+            [patientId]: normalizedDocument,
+          }))
+        } else if (detectedDocumentType === "EID_FRONT") {
+          if (!processed.validation.startsWith784) {
+            clearProcessedDocument(patientId)
+            setSampleErrorMessage(
+              "Emirates ID must start with 784. Please recapture or upload a valid EID front."
+            )
+            setSampleErrorDetails({
+              reason: "validation_failed",
+              retryable: true,
+              errorId: null,
+            })
+            return
+          }
+          setPatientDocuments((current) => ({
+            ...current,
+            [patientId]: normalizedDocument,
+          }))
+        } else {
+          clearProcessedDocument(patientId)
+          setSampleErrorMessage(
+            "Please upload Passport front page or Emirates ID front side only."
+          )
+          setSampleErrorDetails({
+            reason: "validation_failed",
+            retryable: true,
+            errorId: null,
+          })
+          return
+        }
+
+        const autofillResult = applyExtractedDataToPatient(patientId, processed.extractedData)
+        if (autofillResult) {
+          setSampleSuccessMessage(
+            `Document extracted for ${autofillResult.patientLabel}. Review the extracted data, then submit from Sample Collection.`
+          )
+        }
+
+        if (processed.confidenceScore < 0.6) {
+          setSampleErrorMessage(
+            "Document processed with low confidence. Please recapture for better clarity."
+          )
+          setSampleErrorDetails({
+            reason: "document_not_clear",
+            retryable: true,
+            errorId: null,
+          })
+        }
+      } catch (error) {
+        clearProcessedDocument(patientId)
+        const details = getDocumentProcessingErrorDetails(error)
+        setSampleErrorMessage(
+          "Document scan failed. Please rescan again with a clearer image."
+        )
+        setSampleErrorDetails(details)
+      } finally {
+        setProcessingDocumentType(null)
+      }
+    },
+    [applyExtractedDataToPatient, clearProcessedDocument]
   )
 
   const handleProcessDocument = React.useCallback(
-    async (
-      file: File | null,
-      documentType: OpenAiDocumentType,
-      source: DocumentScanSource
-    ) => {
+    async (patientId: string, file: File | null, source: DocumentScanSource) => {
       if (!file) return
 
-      setLastDocumentScan({ documentType, source })
+      setActiveUploadPatientId(patientId)
+      setLastDocumentScan({ source, patientId })
 
       if (!file.type.startsWith("image/")) {
         setSampleErrorMessage("Only image files are supported.")
@@ -745,101 +1346,85 @@ export function BookingFormDialog({
       setSampleErrorMessage(null)
       setSampleSuccessMessage(null)
       setSampleErrorDetails(null)
-      setProcessingDocumentType(documentType)
+
+      let imageToProcess = file
 
       try {
-        const processed = await processDocumentImage({
-          file,
-          documentType,
-        })
-
-        const normalizedDocument: ProcessedImageDocument = {
-          file,
-          previewDataUrl: toPreviewDataUrl(processed.croppedDocumentImageBase64),
-          croppedImageBase64: processed.croppedDocumentImageBase64,
-          extractedData: processed.extractedData,
-          validation: processed.validation,
-          confidenceScore: processed.confidenceScore,
+        const autoCropArea = await detectAutoDocumentCropArea(file)
+        if (autoCropArea) {
+          imageToProcess = await toCroppedImageFile(file, autoCropArea)
         }
-
-        if (documentType === "PASSPORT") {
-          setPassportFrontDocument(normalizedDocument)
-        } else if (documentType === "EID_FRONT") {
-          if (!processed.validation.startsWith784) {
-            setEidFrontDocument(null)
-            setSampleErrorMessage(
-              "Emirates ID must start with 784. Please recapture or upload a valid EID front."
-            )
-            setSampleErrorDetails({
-              reason: "validation_failed",
-              retryable: true,
-              errorId: null,
-            })
-            return
-          }
-          setEidFrontDocument(normalizedDocument)
-        } else {
-          setEidBackDocument(normalizedDocument)
-        }
-
-        if (processed.confidenceScore < 0.6) {
-          setSampleErrorMessage(
-            "Document processed with low confidence. Please recapture for better clarity."
-          )
-          setSampleErrorDetails({
-            reason: "document_not_clear",
-            retryable: true,
-            errorId: null,
-          })
-        }
-      } catch (error) {
-        clearProcessedDocument(documentType)
-        const details = getDocumentProcessingErrorDetails(error)
-        setSampleErrorMessage(details.message || getApiErrorMessage(error))
-        setSampleErrorDetails(details)
-      } finally {
-        setProcessingDocumentType(null)
+      } catch {
+        imageToProcess = file
       }
+
+      await processDocumentFromCroppedFile(patientId, imageToProcess)
     },
-    [clearProcessedDocument]
+    [processDocumentFromCroppedFile]
   )
 
   const triggerDocumentInput = React.useCallback(
-    async (documentType: OpenAiDocumentType, source: DocumentScanSource) => {
+    async (patientId: string, source: DocumentScanSource) => {
+      setActiveUploadPatientId(patientId)
       if (source === "capture") {
-        if (documentType === "PASSPORT") {
-          await openCaptureInput(passportCaptureInputRef)
-          return
-        }
-
-        if (documentType === "EID_FRONT") {
-          await openCaptureInput(eidFrontCaptureInputRef)
-          return
-        }
-
-        await openCaptureInput(eidBackCaptureInputRef)
+        await openCaptureInput(passportCaptureInputRef)
         return
       }
-
-      if (documentType === "PASSPORT") {
-        passportUploadInputRef.current?.click()
-        return
-      }
-
-      if (documentType === "EID_FRONT") {
-        eidFrontUploadInputRef.current?.click()
-        return
-      }
-
-      eidBackUploadInputRef.current?.click()
+      passportUploadInputRef.current?.click()
     },
     [openCaptureInput]
   )
 
   const handleRetryLastDocumentScan = React.useCallback(() => {
     if (!lastDocumentScan || isDocumentProcessing) return
-    void triggerDocumentInput(lastDocumentScan.documentType, lastDocumentScan.source)
+    void triggerDocumentInput(lastDocumentScan.patientId, lastDocumentScan.source)
   }, [isDocumentProcessing, lastDocumentScan, triggerDocumentInput])
+
+  const handleSubmitPatientDetails = React.useCallback(
+    async (patientId: string) => {
+      if (!booking) return
+
+      const mergedUpdates = mergePatientDocumentsIntoUpdates(
+        patientUpdates,
+        patientForms,
+        patientDocuments
+      ).filter((update) => update.currentPatientId === patientId)
+
+      if (mergedUpdates.length === 0) {
+        setPatientActionError("No extracted patient data is ready to submit yet.")
+        setPatientActionMessage(null)
+        return
+      }
+
+      if (!onSavePatientUpdates) {
+        setPatientActionMessage("Patient details are ready. Submit sample collection next.")
+        setPatientActionError(null)
+        return
+      }
+
+      setSubmittingPatientId(patientId)
+      setPatientActionMessage(null)
+      setPatientActionError(null)
+
+      try {
+        await onSavePatientUpdates({
+          booking,
+          updates: mergedUpdates,
+        })
+        setPatientActionMessage("Patient details submitted successfully.")
+        setPatientActionError(null)
+        setActiveSection("sample")
+        void triggerHapticFeedback("success")
+      } catch (error) {
+        setPatientActionError(getApiErrorMessage(error))
+        setPatientActionMessage(null)
+        void triggerHapticFeedback("error")
+      } finally {
+        setSubmittingPatientId(null)
+      }
+    },
+    [booking, onSavePatientUpdates, patientDocuments, patientForms, patientUpdates]
+  )
 
   const sampleIssueReportHref = React.useMemo(() => {
     if (!sampleErrorMessage) return null
@@ -863,69 +1448,6 @@ export function BookingFormDialog({
     return `mailto:support@dardoc.com?subject=${subject}&body=${body}`
   }, [booking?.apiBookingId, booking?.bookingId, sampleErrorDetails, sampleErrorMessage])
 
-  const handlePatientFieldChange = React.useCallback(
-    (
-      patientId: string,
-      field: keyof Omit<BookingPatientForm, "currentPatientId" | "testsCount">,
-      value: string
-    ) => {
-      setPatientForms((current) =>
-        current.map((patient) =>
-          patient.currentPatientId === patientId
-            ? {
-                ...patient,
-                [field]: value,
-              }
-            : patient
-        )
-      )
-
-      setSaveErrorMessage(null)
-      setSaveSuccessMessage(null)
-      setSampleErrorMessage(null)
-      setSampleErrorDetails(null)
-      setSampleSuccessMessage(null)
-    },
-    []
-  )
-
-  const handleSavePatients = React.useCallback(async () => {
-    if (!booking) return
-
-    if (patientUpdates.length === 0) {
-      setSaveSuccessMessage("No patient changes to save.")
-      setSaveErrorMessage(null)
-      void triggerHapticFeedback("light")
-      return
-    }
-
-    if (!onSavePatientUpdates) {
-      setSaveSuccessMessage("Patient details are ready for submission.")
-      setSaveErrorMessage(null)
-      void triggerHapticFeedback("light")
-      return
-    }
-
-    setIsSavingPatients(true)
-    setSaveSuccessMessage(null)
-    setSaveErrorMessage(null)
-
-    try {
-      await onSavePatientUpdates({
-        booking,
-        updates: patientUpdates,
-      })
-
-      setSaveSuccessMessage("Patient details updated successfully.")
-      void triggerHapticFeedback("success")
-    } catch (error) {
-      setSaveErrorMessage(getApiErrorMessage(error))
-      void triggerHapticFeedback("error")
-    } finally {
-      setIsSavingPatients(false)
-    }
-  }, [booking, onSavePatientUpdates, patientUpdates])
-
   const handleSampleSubmit = React.useCallback(async () => {
     if (!booking) {
       return
@@ -934,29 +1456,23 @@ export function BookingFormDialog({
     if (requiresDocumentProof && (!isSampleDocumentReady || !submissionDocumentFile)) {
       setSampleSuccessMessage(null)
       setSampleErrorDetails(null)
-      if (selectedDocumentType === "passport") {
-        setSampleErrorMessage(
-          isCaptureDevice
-            ? "Capture passport front side before submitting."
-            : "Upload passport front side before submitting."
-        )
-      } else {
-        setSampleErrorMessage(
-          isCaptureDevice
-            ? "Capture EID front and back side before submitting."
-            : "Upload EID front and back side before submitting."
-        )
-      }
+      setSampleErrorMessage(
+        isCaptureDevice
+          ? "Capture passport or EID front side before submitting."
+          : "Upload passport or EID front side before submitting."
+      )
       void triggerHapticFeedback("warning")
       return
     }
 
-    const selectedDocumentNumber =
-      selectedDocumentType === "passport"
-        ? (passportFrontDocument?.extractedData.documentNumber || "").trim()
-        : (eidFrontDocument?.extractedData.documentNumber || "").trim()
-
-    if (requiresDocumentProof && !selectedDocumentNumber) {
+    if (
+      requiresDocumentProof &&
+      missingNationalIdPatientIds.some((patientId) => {
+        const documentNumber =
+          patientDocuments[patientId]?.extractedData.documentNumber?.trim() || ""
+        return !documentNumber
+      })
+    ) {
       setSampleSuccessMessage(null)
       setSampleErrorDetails({
         reason: "validation_failed",
@@ -964,9 +1480,7 @@ export function BookingFormDialog({
         errorId: null,
       })
       setSampleErrorMessage(
-        selectedDocumentType === "passport"
-          ? "Passport Document No. not detected. Please recapture or re-upload."
-          : "EID number not detected. Please recapture or re-upload EID front."
+        "Document number not detected. Please recapture or re-upload the document front."
       )
       void triggerHapticFeedback("warning")
       return
@@ -986,11 +1500,7 @@ export function BookingFormDialog({
       return
     }
 
-    if (
-      requiresDocumentProof &&
-      selectedDocumentType === "eid" &&
-      !eidFrontDocument?.validation.startsWith784
-    ) {
+    if (requiresDocumentProof && invalidRequiredEidDocument) {
       setSampleSuccessMessage(null)
       setSampleErrorDetails({
         reason: "validation_failed",
@@ -1004,13 +1514,11 @@ export function BookingFormDialog({
       return
     }
 
-    const updatesForSubmission = requiresDocumentProof
-      ? mergeMissingNationalIdsFromDocument(
-          patientUpdates,
-          missingNationalIdPatientIds,
-          selectedDocumentNumber
-        )
-      : patientUpdates
+    const updatesForSubmission = mergePatientDocumentsIntoUpdates(
+      patientUpdates,
+      patientForms,
+      patientDocuments
+    )
 
     if (!onSubmitSampleCollection) {
       setSampleErrorMessage(null)
@@ -1061,21 +1569,38 @@ export function BookingFormDialog({
   }, [
     booking,
     croppedDocumentImageBase64List,
+    invalidRequiredEidDocument,
     isCaptureDevice,
     isSampleDocumentReady,
-    eidFrontDocument,
     missingNationalIdPatientIds,
     onSubmitSampleCollection,
-    passportFrontDocument,
+    patientDocuments,
+    patientForms,
     patientUpdates,
     requiresDocumentProof,
-    selectedDocumentType,
     submissionDocumentFile,
   ])
-
-  const bookingDetailItems: Array<{ label: string; value: React.ReactNode }> = [
+  const bookingDetailItems: DetailListItem[] = [
     { label: "Booking ID", value: booking?.apiBookingId ?? "-" },
     { label: "Order ID", value: booking?.orderId || "-" },
+    {
+      label: "Phone Number",
+      value: booking?.customerPhone ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span>{booking.customerPhone}</span>
+          {sanitizePhoneForTel(booking.customerPhone) ? (
+            <Button variant="outline" size="sm" asChild className="h-8 rounded-lg px-3">
+              <a href={`tel:${sanitizePhoneForTel(booking.customerPhone)}`}>
+                <Phone className="size-3.5" />
+                Call
+              </a>
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        "-"
+      ),
+    },
     { label: "Start Time", value: formatReadableVisitDateTime(booking?.startAt) },
     { label: "End Time", value: formatReadableVisitDateTime(booking?.endAt) },
     { label: "Created At", value: formatDateTime(booking?.createdAt) },
@@ -1087,6 +1612,18 @@ export function BookingFormDialog({
     Number.isFinite(booking.locationLongitude)
   const locationDestination =
     booking?.locationAddress || booking?.locationLabel || booking?.resourceId || "-"
+  const locationAddressSummary = [
+    booking?.locationLine1,
+    booking?.locationBuildingName,
+    booking?.locationFloorNumber ? `Floor ${booking.locationFloorNumber}` : null,
+    booking?.locationLine2,
+    booking?.locationArea,
+    booking?.locationCity,
+    booking?.locationEmirate,
+    booking?.locationCountry,
+  ]
+    .filter((value): value is string => Boolean(value && value.trim()))
+    .join(", ")
   const mapRouteUrl = React.useMemo(() => {
     if (!booking) return null
 
@@ -1101,36 +1638,89 @@ export function BookingFormDialog({
     }
     return null
   }, [booking])
-  const locationDetailItems: Array<{ label: string; value: React.ReactNode }> = [
-    { label: "Resource Type", value: booking?.resourceType || "-" },
-    { label: "Resource ID", value: booking?.resourceId || "-" },
+  const locationDetailItems: DetailListItem[] = [
     { label: "Destination", value: locationDestination },
-    { label: "Visit Date", value: booking?.date || "-" },
-    { label: "Visit Slot", value: booking?.slot || "-" },
+    { label: "Address", value: locationAddressSummary || "-" },
+    { label: "Building", value: booking?.locationBuildingName || "-" },
+    { label: "Floor", value: booking?.locationFloorNumber || "-" },
+    { label: "Country", value: booking?.locationCountry || "-" },
   ]
-  const pendingPatientChangesCount = patientUpdates.length
-
+  const sampleFlowCanSubmit =
+    !isSubmittingSample &&
+    !isDocumentProcessing &&
+    !isCompletedBooking &&
+    (!requiresDocumentProof || isSampleDocumentReady)
+  const isSampleCollected = sampleSuccessMessage === "Sample collection submitted successfully."
+  const sampleStatusDescription = isCompletedBooking
+    ? "This booking is already closed based on the current API status."
+    : requiresDocumentProof
+    ? "Collect missing patient ID documents first, then complete the sample flow."
+    : "All required patient details are already available. Complete the sample flow now."
+  const openSampleSubmitConfirm = React.useCallback(() => {
+    if (!sampleFlowCanSubmit) {
+      return
+    }
+    setIsSampleSubmitConfirmOpen(true)
+  }, [sampleFlowCanSubmit])
+  const confirmSampleSubmit = React.useCallback(() => {
+    if (!sampleFlowCanSubmit) {
+      return
+    }
+    setIsSampleSubmitConfirmOpen(false)
+    void handleSampleSubmit()
+  }, [handleSampleSubmit, sampleFlowCanSubmit])
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="inset-x-0 bottom-0 top-auto h-[100dvh] max-h-[100dvh] w-[100dvw] max-w-[100dvw] translate-x-0 translate-y-0 overflow-hidden rounded-none border-x-0 border-b-0 border-border/70 p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom [&>button]:hidden sm:bottom-0 sm:h-[95dvh] sm:max-h-[95dvh] sm:w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-1rem)] sm:rounded-t-2xl sm:border sm:p-0 md:bottom-auto md:left-[50%] md:top-[50%] md:h-auto md:max-h-[620px] md:max-w-[980px] md:translate-x-[-50%] md:translate-y-[-50%] md:rounded-xl lg:max-w-[1120px]">
-        <DialogTitle className="sr-only">Booking Details</DialogTitle>
-        <DialogDescription className="sr-only">
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="bottom"
+        overlayClassName="bg-black/55 backdrop-blur-[1px] lg:bg-black/45"
+        className="inset-x-0 bottom-0 top-auto h-[92dvh] max-h-[92dvh] w-[100dvw] max-w-[100dvw] overflow-hidden rounded-t-[22px] border border-b-0 border-border/70 p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom [&>button]:hidden lg:inset-y-0 lg:inset-x-auto lg:bottom-auto lg:top-0 lg:left-auto lg:right-0 lg:h-[100dvh] lg:max-h-[100dvh] lg:w-[min(1120px,92vw)] lg:max-w-[min(1120px,92vw)] lg:rounded-none lg:border-y-0 lg:border-r-0 lg:border-l lg:border-border/70 lg:shadow-2xl lg:data-[state=closed]:slide-out-to-right lg:data-[state=open]:slide-in-from-right"
+      >
+        <SheetTitle className="sr-only">Booking Details</SheetTitle>
+        <SheetDescription className="sr-only">
           Review booking details, update patient information, and submit sample collection.
-        </DialogDescription>
-        <SidebarProvider className="h-full items-start overflow-hidden">
-          <Sidebar collapsible="none" className="hidden border-r md:flex">
-            <SidebarContent>
-              <SidebarGroup>
+        </SheetDescription>
+        <div className="flex items-center justify-center border-b border-border/70 py-2 lg:hidden">
+          <span className="h-1 w-10 rounded-full bg-muted-foreground/35" />
+        </div>
+        <SidebarProvider
+          className="h-full items-start overflow-hidden"
+          style={{ "--sidebar-width": "15rem" } as React.CSSProperties}
+        >
+          <Sidebar
+            collapsible="none"
+            className="hidden border-r border-border/70 bg-card/40 lg:flex"
+          >
+            <SidebarContent className="gap-0 p-2">
+              <SidebarGroup className="p-0">
+                <div className="px-2 pt-2 pb-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Sections
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Navigate booking workflow quickly.
+                  </p>
+                </div>
                 <SidebarGroupContent>
-                  <SidebarMenu>
-                    {sectionItems.map((item) => (
+                  <SidebarMenu className="gap-1">
+                    {orderedSectionItems.map((item) => (
                       <SidebarMenuItem key={item.name}>
                         <SidebarMenuButton
+                          size="lg"
+                          variant={activeSection === item.key ? "outline" : "default"}
                           isActive={activeSection === item.key}
+                          className="h-auto min-h-12 items-start rounded-xl px-3 py-2.5"
                           onClick={() => setActiveSection(item.key)}
                         >
-                          <item.icon />
-                          <span>{item.name}</span>
+                          <item.icon className="mt-0.5 size-4" />
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate text-sm font-semibold">
+                              {item.name}
+                            </span>
+                            <span className="text-muted-foreground truncate text-[11px] font-normal">
+                              {item.description}
+                            </span>
+                          </span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     ))}
@@ -1140,7 +1730,7 @@ export function BookingFormDialog({
             </SidebarContent>
           </Sidebar>
 
-          <main className="flex h-full w-full min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-hidden md:h-[580px]">
+          <main className="flex h-full w-full min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-hidden">
             <header className="safe-area-top bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-20 flex min-h-14 shrink-0 items-center border-b backdrop-blur md:h-16 md:bg-transparent md:backdrop-blur-none">
               <div className="flex w-full min-w-0 items-center justify-between gap-2 overflow-x-hidden px-3 sm:px-4">
                 <div className="min-w-0 md:hidden">
@@ -1169,124 +1759,78 @@ export function BookingFormDialog({
                 >
                   <X className="size-4" />
                   <span className="hidden text-xs font-medium sm:inline">Close</span>
-                  <span className="sr-only">Close dialog</span>
+                  <span className="sr-only">Close panel</span>
                 </Button>
               </div>
             </header>
 
-            <div className="border-b border-border/70 bg-background/95 px-3 py-2.5 md:hidden">
-              <div
-                role="tablist"
-                aria-label="Booking details sections"
-                className="grid grid-cols-2 gap-2"
+            <div className="border-b border-border/70 bg-background/95 px-3 py-2.5 lg:hidden">
+              <Tabs
+                value={activeSection}
+                onValueChange={(value) => setActiveSection(value as DialogSection)}
               >
-                {sectionItems.map((item) => {
-                  const isActive = activeSection === item.key
-
-                  return (
-                    <Button
+                <TabsList className="group-data-horizontal/tabs:h-auto grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/70 p-1">
+                  {orderedSectionItems.map((item) => (
+                    <TabsTrigger
                       key={item.key}
-                      type="button"
-                      role="tab"
-                      aria-selected={isActive}
-                      size="sm"
-                      variant={isActive ? "default" : "outline"}
-                      className="mobile-touch-target h-11 w-full justify-start rounded-xl px-3 text-xs font-semibold"
-                      onClick={() => setActiveSection(item.key)}
+                      value={item.key}
+                      className="mobile-touch-target h-10 justify-start rounded-lg px-2.5 text-xs font-semibold data-[state=active]:bg-background"
                     >
-                      <item.icon className="size-4" />
+                      <item.icon className="size-3.5" />
                       <span className="truncate">{item.name}</span>
-                    </Button>
-                  )
-                })}
-              </div>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3 pb-[calc(7.25rem+env(safe-area-inset-bottom))] [touch-action:pan-y] sm:p-4 md:space-y-5 md:p-6 md:pb-6">
+            <div className="min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3 pb-[calc(7.25rem+env(safe-area-inset-bottom))] [touch-action:pan-y] sm:p-4 sm:pb-[calc(7.25rem+env(safe-area-inset-bottom))] md:space-y-5 md:p-6 md:pb-[calc(7.25rem+env(safe-area-inset-bottom))] lg:pb-6">
+              <input
+                ref={passportUploadInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (event) => {
+                  const input = event.currentTarget
+                  const file = input.files?.[0] ?? null
+                  if (activeUploadPatientId) {
+                    await handleProcessDocument(activeUploadPatientId, file, "upload")
+                  }
+                  input.value = ""
+                }}
+              />
+
+              <input
+                ref={passportCaptureInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={async (event) => {
+                  const input = event.currentTarget
+                  const file = input.files?.[0] ?? null
+                  if (activeUploadPatientId) {
+                    await handleProcessDocument(activeUploadPatientId, file, "capture")
+                  }
+                  input.value = ""
+                }}
+              />
+
               {activeSection === "booking" ? (
                 <section className="space-y-4">
-                  <Card className="shadow-none">
-                    <CardHeader className="space-y-3 p-4">
-                      <div className="space-y-1">
-                        <CardTitle className="text-base">Booking Details</CardTitle>
-                        <CardDescription>
-                          Core booking, status, and billing snapshot.
-                        </CardDescription>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="secondary">
-                          Booking: {booking?.bookingStatusRaw || "Unknown"}
-                        </Badge>
-                        <Badge variant="outline">Order: {booking?.orderStatus || "-"}</Badge>
-                        <Badge variant="outline">
-                          Patients: {booking?.patientCount ?? sourcePatients.length}
-                        </Badge>
-                      </div>
+                  <Card className="overflow-hidden shadow-none">
+                    <CardHeader className="border-b border-border/70 p-4">
+                      <CardTitle className="text-sm font-semibold">Booking Information</CardTitle>
                     </CardHeader>
+                    <CardContent className="p-0">
+                      <DetailRows items={bookingDetailItems} />
+                    </CardContent>
                   </Card>
-
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {bookingDetailItems.map((item) => (
-                      <Card key={item.label} className="shadow-none">
-                        <CardHeader className="space-y-1 p-4">
-                          <CardDescription className="text-xs uppercase tracking-wide">
-                            {item.label}
-                          </CardDescription>
-                          <CardTitle className="text-base font-semibold leading-snug">
-                            <span className="break-words whitespace-normal">
-                              {item.value}
-                            </span>
-                          </CardTitle>
-                        </CardHeader>
-                      </Card>
-                    ))}
-                  </div>
                 </section>
               ) : null}
 
               {activeSection === "patients" ? (
                 <section className="space-y-4">
-                  <Card className="shadow-none">
-                    <CardHeader className="space-y-3 p-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="space-y-1">
-                          <CardTitle className="text-base">Patient Details</CardTitle>
-                          <CardDescription>
-                            Update patient snapshot data before sample collection.
-                          </CardDescription>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="default"
-                          className="mobile-touch-target h-11 w-full sm:h-10 sm:w-auto"
-                          disabled={isSavingPatients}
-                          onClick={() => {
-                            void handleSavePatients()
-                          }}
-                        >
-                          {isSavingPatients ? (
-                            "Saving..."
-                          ) : (
-                            <>
-                              <span className="sm:hidden">Save Details</span>
-                              <span className="hidden sm:inline">Save Patient Details</span>
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="outline">Patients: {patientForms.length}</Badge>
-                        <Badge
-                          variant={
-                            pendingPatientChangesCount > 0 ? "secondary" : "outline"
-                          }
-                        >
-                          Pending Changes: {pendingPatientChangesCount}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                  </Card>
-
                   {patientForms.length === 0 ? (
                     <Card className="shadow-none">
                       <CardContent className="p-4">
@@ -1313,7 +1857,9 @@ export function BookingFormDialog({
                                   </Badge>
                                 ) : null}
                                 {!patient.nationalId.trim() ? (
-                                  <Badge variant="destructive">National ID required</Badge>
+                                  <Badge variant="destructive" className="text-white">
+                                    National ID required
+                                  </Badge>
                                 ) : (
                                   <Badge variant="secondary">ID available</Badge>
                                 )}
@@ -1321,85 +1867,235 @@ export function BookingFormDialog({
                             </div>
                           </CardHeader>
                           <CardContent className="p-4 pt-2">
-                            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                              <div className="space-y-1.5">
-                                <Label htmlFor={`name-${patient.currentPatientId}`}>Name</Label>
-                                <Input
-                                  id={`name-${patient.currentPatientId}`}
-                                  value={patient.name}
-                                  onChange={(event) =>
-                                    handlePatientFieldChange(
-                                      patient.currentPatientId,
-                                      "name",
-                                      event.target.value
-                                    )
-                                  }
-                                />
+                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                              <div className="rounded-xl border border-border/70 bg-card/40 p-3">
+                                <p className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.14em]">
+                                  Name
+                                </p>
+                                <p className="mt-1 text-sm font-medium">
+                                  {patient.name.trim() || "-"}
+                                </p>
                               </div>
-                              <div className="space-y-1.5">
-                                <Label htmlFor={`age-${patient.currentPatientId}`}>Age</Label>
-                                <Input
-                                  id={`age-${patient.currentPatientId}`}
-                                  inputMode="numeric"
-                                  value={patient.age}
-                                  onChange={(event) =>
-                                    handlePatientFieldChange(
-                                      patient.currentPatientId,
-                                      "age",
-                                      event.target.value
-                                    )
-                                  }
-                                />
+                              <div className="rounded-xl border border-border/70 bg-card/40 p-3">
+                                <p className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.14em]">
+                                  Age
+                                </p>
+                                <p className="mt-1 text-sm font-medium">{patient.age || "-"}</p>
                               </div>
-                              <div className="space-y-1.5">
-                                <Label htmlFor={`gender-${patient.currentPatientId}`}>
+                              <div className="rounded-xl border border-border/70 bg-card/40 p-3">
+                                <p className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.14em]">
                                   Gender
-                                </Label>
-                                <Input
-                                  id={`gender-${patient.currentPatientId}`}
-                                  value={patient.gender}
-                                  onChange={(event) =>
-                                    handlePatientFieldChange(
-                                      patient.currentPatientId,
-                                      "gender",
-                                      event.target.value
-                                    )
-                                  }
-                                  placeholder="Female / Male"
-                                />
+                                </p>
+                                <p className="mt-1 text-sm font-medium">
+                                  {patient.gender || "-"}
+                                </p>
                               </div>
-                              <div className="space-y-1.5 md:col-span-2 lg:col-span-2">
-                                <Label htmlFor={`national-id-${patient.currentPatientId}`}>
+                              <div className="rounded-xl border border-border/70 bg-card/40 p-3">
+                                <p className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.14em]">
                                   National ID / Passport
-                                </Label>
-                                <Input
-                                  id={`national-id-${patient.currentPatientId}`}
-                                  value={patient.nationalId}
-                                  onChange={(event) =>
-                                    handlePatientFieldChange(
-                                      patient.currentPatientId,
-                                      "nationalId",
-                                      event.target.value
-                                    )
-                                  }
-                                  placeholder="784-1987-1234567-1"
-                                />
+                                </p>
+                                <p className="mt-1 text-sm font-medium">
+                                  {patient.nationalId || "-"}
+                                </p>
                               </div>
                             </div>
+                            {(() => {
+                              const patientDocument =
+                                patientDocuments[patient.currentPatientId] || null
+                              const documentLabel = patientDocument
+                                ? patientDocument.documentType === "EID_FRONT"
+                                  ? "EID Front"
+                                  : "Passport Front"
+                                : "Auto Detect"
+
+                              const needsDocument = !patient.nationalId.trim()
+                              const shouldShowUploadSection = needsDocument || Boolean(patientDocument)
+                              const isProcessingThisPatient =
+                                isDocumentProcessing &&
+                                activeUploadPatientId === patient.currentPatientId
+
+                              if (!shouldShowUploadSection) {
+                                return null
+                              }
+
+                              return (
+                                <div className="mt-4 space-y-3 rounded-2xl border border-border/70 bg-card/40 p-3">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="space-y-1">
+                                      <p className="text-sm font-semibold">
+                                        Document Upload (Passport or EID Front)
+                                      </p>
+                                      <p className="text-muted-foreground text-xs">
+                                        {needsDocument
+                                          ? "Upload or capture one clear front image for this patient."
+                                          : "ID already exists in the API response for this patient."}
+                                      </p>
+                                    </div>
+                                    <Badge
+                                      variant={
+                                        isDocumentProcessing &&
+                                        activeUploadPatientId === patient.currentPatientId
+                                          ? "outline"
+                                          : patientDocument
+                                          ? "secondary"
+                                          : needsDocument
+                                          ? "destructive"
+                                          : "secondary"
+                                      }
+                                      className={needsDocument && !patientDocument ? "text-white" : undefined}
+                                    >
+                                      {isDocumentProcessing &&
+                                      activeUploadPatientId === patient.currentPatientId
+                                        ? "Scanning"
+                                        : patientDocument
+                                        ? "Uploaded"
+                                        : needsDocument
+                                        ? "Required"
+                                        : "Not needed"}
+                                    </Badge>
+                                  </div>
+
+                                  <div className="flex flex-wrap gap-2">
+                                    <Badge variant="outline">Detected: {documentLabel}</Badge>
+                                    {patientDocument?.extractedData.documentNumber ? (
+                                      <Badge variant="secondary">Data extracted</Badge>
+                                    ) : null}
+                                  </div>
+
+                                  {isProcessingThisPatient ? (
+                                    <ProcessingDocumentState
+                                      documentType={processingDocumentType}
+                                    />
+                                  ) : null}
+
+                                  {patientDocument ? (
+                                    <div className="space-y-3">
+                                      <div className="relative h-36 w-full overflow-hidden rounded-lg border bg-black/5">
+                                        <PreviewImage
+                                          src={patientDocument.previewDataUrl}
+                                          label={`${documentLabel} preview`}
+                                          fallbackFile={patientDocument.file}
+                                        />
+                                      </div>
+                                      <div className="grid gap-2 rounded-xl border border-border/70 bg-background/40 p-3 text-xs sm:grid-cols-2">
+                                        <p>
+                                          <span className="text-muted-foreground">Full Name: </span>
+                                          {patientDocument.extractedData.fullName || "-"}
+                                        </p>
+                                        <p>
+                                          <span className="text-muted-foreground">Document No: </span>
+                                          {patientDocument.extractedData.documentNumber || "-"}
+                                        </p>
+                                        <p>
+                                          <span className="text-muted-foreground">Gender: </span>
+                                          {patientDocument.extractedData.gender || "-"}
+                                        </p>
+                                        <p>
+                                          <span className="text-muted-foreground">Nationality: </span>
+                                          {patientDocument.extractedData.nationality || "-"}
+                                        </p>
+                                      </div>
+                                      <div className="flex flex-wrap justify-end gap-2">
+                                        {!isCompletedBooking && !isSampleCollected ? (
+                                          <Button
+                                            type="button"
+                                            className="mobile-touch-target h-10 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+                                            disabled={submittingPatientId === patient.currentPatientId}
+                                            onClick={() => {
+                                              void handleSubmitPatientDetails(
+                                                patient.currentPatientId
+                                              )
+                                            }}
+                                          >
+                                            {submittingPatientId === patient.currentPatientId ? (
+                                              <>
+                                                <Loader2 className="size-4 animate-spin" />
+                                                Submitting...
+                                              </>
+                                            ) : (
+                                              "Submit Patient Details"
+                                            )}
+                                          </Button>
+                                        ) : null}
+                                        <Button
+                                          type="button"
+                                          variant="secondary"
+                                          className="mobile-touch-target h-10 rounded-xl"
+                                          disabled
+                                        >
+                                          <CheckCircle2 className="size-4" />
+                                          Completed
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ) : needsDocument ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="flex h-36 w-full items-center justify-center overflow-hidden rounded-lg border border-dashed border-border/70 bg-background/40 transition-colors hover:border-primary/50 hover:bg-background/70"
+                                        disabled={
+                                          isDocumentProcessing ||
+                                          (isCaptureDevice && isRequestingCameraPermission)
+                                        }
+                                        onClick={() => {
+                                          void triggerDocumentInput(
+                                            patient.currentPatientId,
+                                            isCaptureDevice ? "capture" : "upload"
+                                          )
+                                        }}
+                                      >
+                                        <div className="text-muted-foreground flex flex-col items-center gap-2 text-xs">
+                                          {isCaptureDevice ? (
+                                            <Camera className="size-5" />
+                                          ) : (
+                                            <ImageUp className="size-5" />
+                                          )}
+                                          <span>
+                                            {isCaptureDevice
+                                              ? "Capture document front"
+                                              : "Upload document front"}
+                                          </span>
+                                        </div>
+                                      </button>
+                                      <div className="flex flex-wrap gap-2">
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          className="mobile-touch-target h-10 rounded-xl"
+                                          disabled={
+                                            isDocumentProcessing ||
+                                            (isCaptureDevice && isRequestingCameraPermission)
+                                          }
+                                          onClick={() => {
+                                            void triggerDocumentInput(
+                                              patient.currentPatientId,
+                                              isCaptureDevice ? "capture" : "upload"
+                                            )
+                                          }}
+                                        >
+                                          {isCaptureDevice ? "Capture Front" : "Upload Front"}
+                                        </Button>
+                                      </div>
+                                    </>
+                                  ) : null}
+                                </div>
+                              )
+                            })()}
                           </CardContent>
                         </Card>
                       ))}
                     </div>
                   )}
 
-                  {saveErrorMessage ? (
+                  {patientActionError ? (
                     <div className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-600 dark:text-rose-300">
-                      {saveErrorMessage}
+                      {patientActionError}
                     </div>
                   ) : null}
-                  {saveSuccessMessage ? (
+
+                  {patientActionMessage ? (
                     <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-600 dark:text-emerald-300">
-                      {saveSuccessMessage}
+                      {patientActionMessage}
                     </div>
                   ) : null}
                 </section>
@@ -1407,542 +2103,153 @@ export function BookingFormDialog({
 
               {activeSection === "location" ? (
                 <section className="space-y-4">
-                  <Card className="shadow-none">
-                    <CardHeader className="space-y-3 p-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="space-y-1">
-                          <CardTitle className="text-base">Location Details</CardTitle>
-                          <CardDescription>
-                            Assignment and visit schedule details for this booking.
-                          </CardDescription>
-                        </div>
+                  <Card className="overflow-hidden shadow-none">
+                    <CardHeader className="border-b border-border/70 p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <CardTitle className="text-sm font-semibold">Route Information</CardTitle>
                         {mapRouteUrl && hasCoordinates ? (
-                          <Button asChild type="button" variant="default" size="sm">
+                          <Button asChild type="button" variant="outline" size="sm">
                             <a href={mapRouteUrl} target="_blank" rel="noreferrer">
                               <ExternalLink className="size-4" />
                               View Route in Map
                             </a>
                           </Button>
-                        ) : (
-                          <Button type="button" variant="outline" size="sm" disabled>
-                            View Route in Map
-                          </Button>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="outline">{booking?.date || "-"}</Badge>
-                        <Badge variant="secondary">{booking?.slot || "-"}</Badge>
-                        {hasCoordinates ? <Badge variant="outline">Map ready</Badge> : null}
+                        ) : null}
                       </div>
                     </CardHeader>
+                    <CardContent className="p-0">
+                      <DetailRows items={locationDetailItems} />
+                    </CardContent>
                   </Card>
-
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {locationDetailItems.map((item) => (
-                      <Card key={item.label} className="shadow-none">
-                        <CardHeader className="space-y-1 p-4">
-                          <CardDescription className="text-xs uppercase tracking-wide">
-                            {item.label}
-                          </CardDescription>
-                          <CardTitle className="text-base font-semibold leading-snug">
-                            <span className="break-words whitespace-normal">
-                              {item.value}
-                            </span>
-                          </CardTitle>
-                        </CardHeader>
-                      </Card>
-                    ))}
-                  </div>
                 </section>
               ) : null}
 
               {activeSection === "sample" ? (
                 <section className="space-y-4">
-                  <Card className="shadow-none">
-                    <CardHeader className="space-y-3 p-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="space-y-1">
-                          <CardTitle className="text-base">Sample Collection</CardTitle>
-                          <CardDescription>
-                            Complete the patient update flow and submit collection proof.
-                          </CardDescription>
-                        </div>
-                        <Button
-                          type="button"
-                          className="mobile-touch-target h-11 w-full rounded-xl sm:h-10 sm:w-auto"
-                          onClick={() => setShowSampleCollection(true)}
-                        >
-                          Mark as Sample Collected
-                        </Button>
-                      </div>
-                    </CardHeader>
-                  </Card>
+                  {requiresDocumentProof ? (
+                    <Alert className="border-amber-500/30 bg-amber-500/10">
+                      <AlertTriangle className="size-4 text-amber-600 dark:text-amber-300" />
+                      <AlertTitle className="text-sm">
+                        Document proof required for submission
+                      </AlertTitle>
+                      <AlertDescription className="text-xs leading-relaxed">
+                        Some patients are missing National ID/Passport.
+                        {" Add one clear passport or Emirates ID front image."}
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Alert className="border-emerald-500/30 bg-emerald-500/10">
+                      <FlaskConical className="size-4 text-emerald-600 dark:text-emerald-300" />
+                      <AlertTitle className="text-sm">
+                        Ready for quick sample submission
+                      </AlertTitle>
+                      <AlertDescription className="text-xs leading-relaxed">
+                        No document capture is required. You can submit directly.
+                      </AlertDescription>
+                    </Alert>
+                  )}
 
-                  {showSampleCollection ? (
-                    <>
-                      <input
-                        ref={passportUploadInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (event) => {
-                          const input = event.currentTarget
-                          const file = input.files?.[0] ?? null
-                          await handleProcessDocument(file, "PASSPORT", "upload")
-                          input.value = ""
-                        }}
-                      />
-
-                      <input
-                        ref={eidFrontUploadInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (event) => {
-                          const input = event.currentTarget
-                          const file = input.files?.[0] ?? null
-                          await handleProcessDocument(file, "EID_FRONT", "upload")
-                          input.value = ""
-                        }}
-                      />
-
-                      <input
-                        ref={eidBackUploadInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (event) => {
-                          const input = event.currentTarget
-                          const file = input.files?.[0] ?? null
-                          await handleProcessDocument(file, "EID_BACK", "upload")
-                          input.value = ""
-                        }}
-                      />
-
-                      <input
-                        ref={passportCaptureInputRef}
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        className="hidden"
-                        onChange={async (event) => {
-                          const input = event.currentTarget
-                          const file = input.files?.[0] ?? null
-                          await handleProcessDocument(file, "PASSPORT", "capture")
-                          input.value = ""
-                        }}
-                      />
-
-                      <input
-                        ref={eidFrontCaptureInputRef}
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        className="hidden"
-                        onChange={async (event) => {
-                          const input = event.currentTarget
-                          const file = input.files?.[0] ?? null
-                          await handleProcessDocument(file, "EID_FRONT", "capture")
-                          input.value = ""
-                        }}
-                      />
-
-                      <input
-                        ref={eidBackCaptureInputRef}
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        className="hidden"
-                        onChange={async (event) => {
-                          const input = event.currentTarget
-                          const file = input.files?.[0] ?? null
-                          await handleProcessDocument(file, "EID_BACK", "capture")
-                          input.value = ""
-                        }}
-                      />
-
-                      <div className="grid gap-4 xl:grid-cols-2">
-                        <Card className="shadow-none">
-                          <CardHeader className="space-y-2 p-4 pb-2">
-                            <CardTitle className="text-base">
-                              1. Choose Document Type
-                            </CardTitle>
-                            <CardDescription>
-                              Passport needs front side. EID needs front and back.
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="space-y-3 p-4 pt-2">
-                            <div className="grid grid-cols-2 gap-2">
-                              <Button
-                                type="button"
-                                variant={
-                                  selectedDocumentType === "passport"
-                                    ? "default"
-                                    : "outline"
-                                }
-                                className="mobile-touch-target h-10 w-full rounded-xl"
-                                onClick={() => {
-                                  setSelectedDocumentType("passport")
-                                  setSampleErrorMessage(null)
-                                  setSampleErrorDetails(null)
-                                  setSampleSuccessMessage(null)
-                                }}
-                              >
-                                Passport
-                              </Button>
-                              <Button
-                                type="button"
-                                variant={
-                                  selectedDocumentType === "eid" ? "default" : "outline"
-                                }
-                                className="mobile-touch-target h-10 w-full rounded-xl"
-                                onClick={() => {
-                                  setSelectedDocumentType("eid")
-                                  setSampleErrorMessage(null)
-                                  setSampleErrorDetails(null)
-                                  setSampleSuccessMessage(null)
-                                }}
-                              >
-                                EID
-                              </Button>
-                            </div>
-                            <p className="text-muted-foreground text-xs">
-                              {isCaptureDevice
-                                ? "Mobile/Tablet mode: capture required sides."
-                                : "Desktop mode: upload required sides."}
-                            </p>
-                          </CardContent>
-                        </Card>
-
-                        <Card className="shadow-none">
-                          <CardHeader className="space-y-2 p-4 pb-2">
-                            <CardTitle className="text-base">
-                              2. {isCaptureDevice ? "Capture Images" : "Upload Images"}
-                            </CardTitle>
-                            <CardDescription>
-                              {requiresDocumentProof
-                                ? "Provide document proof to continue submission."
-                                : "Optional when all patients already have a document ID."}
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="space-y-3 p-4 pt-2">
-                            {isCaptureDevice ? (
-                              <>
-                                {!hasCameraPermission ? (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    className="mobile-touch-target h-10 w-full rounded-xl sm:w-auto"
-                                    disabled={
-                                      isRequestingCameraPermission || isDocumentProcessing
-                                    }
-                                    onClick={() => {
-                                      void requestCameraPermission()
-                                    }}
-                                  >
-                                    {isRequestingCameraPermission
-                                      ? "Requesting Camera Permission..."
-                                      : "Allow Camera Permission"}
-                                  </Button>
-                                ) : (
-                                  <Badge variant="secondary" className="w-fit">
-                                    Camera permission granted
-                                  </Badge>
-                                )}
-
-                                {selectedDocumentType === "passport" ? (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    className="mobile-touch-target h-10 w-full rounded-xl sm:w-auto"
-                                    disabled={
-                                      isRequestingCameraPermission || isDocumentProcessing
-                                    }
-                                    onClick={() => {
-                                      void openCaptureInput(passportCaptureInputRef)
-                                    }}
-                                  >
-                                    {processingDocumentType === "PASSPORT"
-                                      ? "Scanning Passport Front..."
-                                      : passportFrontDocument
-                                      ? "Recapture Passport Front"
-                                      : "Capture Passport Front"}
-                                  </Button>
-                                ) : (
-                                  <div className="space-y-3">
-                                    <div className="grid gap-2 sm:grid-cols-2">
-                                      <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                                        <p className="text-xs font-medium">EID Front</p>
-                                        <Badge
-                                          variant={
-                                            eidFrontDocument ? "secondary" : "outline"
-                                          }
-                                        >
-                                          {eidFrontDocument ? "Processed" : "Pending"}
-                                        </Badge>
-                                      </div>
-                                      <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                                        <p className="text-xs font-medium">EID Back</p>
-                                        <Badge
-                                          variant={
-                                            eidBackDocument ? "secondary" : "outline"
-                                          }
-                                        >
-                                          {eidBackDocument ? "Processed" : "Pending"}
-                                        </Badge>
-                                      </div>
-                                    </div>
-                                    <div className="grid gap-2 sm:grid-cols-2">
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        className="mobile-touch-target h-10 w-full rounded-xl"
-                                        disabled={
-                                          isRequestingCameraPermission || isDocumentProcessing
-                                        }
-                                        onClick={() => {
-                                          void openCaptureInput(eidFrontCaptureInputRef)
-                                        }}
-                                      >
-                                        {processingDocumentType === "EID_FRONT"
-                                          ? "Scanning EID Front..."
-                                          : eidFrontDocument
-                                          ? "Recapture EID Front"
-                                          : "Capture EID Front"}
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        className="mobile-touch-target h-10 w-full rounded-xl"
-                                        disabled={
-                                          isRequestingCameraPermission || isDocumentProcessing
-                                        }
-                                        onClick={() => {
-                                          void openCaptureInput(eidBackCaptureInputRef)
-                                        }}
-                                      >
-                                        {processingDocumentType === "EID_BACK"
-                                          ? "Scanning EID Back..."
-                                          : eidBackDocument
-                                          ? "Recapture EID Back"
-                                          : "Capture EID Back"}
-                                      </Button>
-                                    </div>
-                                  </div>
-                                )}
-                              </>
-                            ) : selectedDocumentType === "passport" ? (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                className="mobile-touch-target h-10 w-full rounded-xl sm:w-auto"
-                                disabled={isDocumentProcessing}
-                                onClick={() => passportUploadInputRef.current?.click()}
-                              >
-                                {processingDocumentType === "PASSPORT"
-                                  ? "Scanning Passport Front..."
-                                  : passportFrontDocument
-                                  ? "Re-upload Passport Front"
-                                  : "Upload Passport Front"}
-                              </Button>
-                            ) : (
-                              <div className="space-y-3">
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                  <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                                    <p className="text-xs font-medium">EID Front</p>
-                                    <Badge
-                                      variant={eidFrontDocument ? "secondary" : "outline"}
-                                    >
-                                      {eidFrontDocument ? "Processed" : "Pending"}
-                                    </Badge>
-                                  </div>
-                                  <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                                    <p className="text-xs font-medium">EID Back</p>
-                                    <Badge
-                                      variant={eidBackDocument ? "secondary" : "outline"}
-                                    >
-                                      {eidBackDocument ? "Processed" : "Pending"}
-                                    </Badge>
-                                  </div>
-                                </div>
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    className="mobile-touch-target h-10 w-full rounded-xl"
-                                    disabled={isDocumentProcessing}
-                                    onClick={() => eidFrontUploadInputRef.current?.click()}
-                                  >
-                                    {processingDocumentType === "EID_FRONT"
-                                      ? "Scanning EID Front..."
-                                      : eidFrontDocument
-                                      ? "Re-upload EID Front"
-                                      : "Upload EID Front"}
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    className="mobile-touch-target h-10 w-full rounded-xl"
-                                    disabled={isDocumentProcessing}
-                                    onClick={() => eidBackUploadInputRef.current?.click()}
-                                  >
-                                    {processingDocumentType === "EID_BACK"
-                                      ? "Scanning EID Back..."
-                                      : eidBackDocument
-                                      ? "Re-upload EID Back"
-                                      : "Upload EID Back"}
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
-                      </div>
-
-                      <Card className="shadow-none">
+                  <>
+                    <Card className="shadow-none">
                         <CardHeader className="space-y-2 p-4 pb-2">
                           <CardTitle className="text-base">
-                            3. Preview and Submit
+                            {requiresDocumentProof ? "Missing Patient Documents" : "Review and Complete"}
                           </CardTitle>
                           <CardDescription>
-                            Verify captured files and complete submission.
+                            {sampleStatusDescription}
                           </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4 p-4 pt-2">
-                          {selectedDocumentType === "passport" ? (
-                            <div className="space-y-2">
-                              <p className="text-muted-foreground text-xs">
-                                Passport front:{" "}
-                                {passportFrontDocument?.file.name ||
-                                  (isCaptureDevice
-                                    ? "Not captured"
-                                    : "Not uploaded")}
-                              </p>
-                              {passportFrontDocument ? (
-                                <div className="space-y-1">
-                                  <p className="text-muted-foreground text-[11px]">
-                                    Passport front preview (auto-cropped)
-                                  </p>
-                                  <div className="relative h-44 w-full overflow-hidden rounded-md border bg-black/5">
-                                    <PreviewImage
-                                      src={passportFrontDocument.previewDataUrl}
-                                      label="Passport front preview"
-                                      fallbackFile={passportFrontDocument.file}
-                                    />
-                                  </div>
-                                  <div className="grid gap-2 rounded-md border p-2 text-xs sm:grid-cols-2">
-                                    <p>
-                                      <span className="text-muted-foreground">
-                                        Full Name:{" "}
-                                      </span>
-                                      {passportFrontDocument.extractedData.fullName || "-"}
-                                    </p>
-                                    <p>
-                                      <span className="text-muted-foreground">
-                                        Document No:{" "}
-                                      </span>
-                                      {passportFrontDocument.extractedData.documentNumber || "-"}
-                                    </p>
-                                    <p>
-                                      <span className="text-muted-foreground">Gender: </span>
-                                      {passportFrontDocument.extractedData.gender || "-"}
-                                    </p>
-                                    <p>
-                                      <span className="text-muted-foreground">
-                                        Nationality:{" "}
-                                      </span>
-                                      {passportFrontDocument.extractedData.nationality || "-"}
-                                    </p>
-                                  </div>
-                                </div>
+                          {requiresDocumentProof ? (
+                            <div className="space-y-3">
+                              {patientForms
+                                .filter((patient) => !patient.nationalId.trim())
+                                .map((patient, index) => {
+                                  const patientDocument =
+                                    patientDocuments[patient.currentPatientId] || null
+
+                                  return (
+                                    <div
+                                      key={patient.currentPatientId}
+                                      className="rounded-xl border border-border/70 bg-card/40 p-3"
+                                    >
+                                      <div className="flex flex-wrap items-start justify-between gap-2">
+                                        <div>
+                                          <p className="text-sm font-semibold">
+                                            {patient.name.trim() || `Patient ${index + 1}`}
+                                          </p>
+                                          <p className="text-muted-foreground text-xs">
+                                            {patientDocument
+                                              ? "Document uploaded and extracted."
+                                              : "Patient ID document still required."}
+                                          </p>
+                                        </div>
+                                        <Badge
+                                          variant={patientDocument ? "secondary" : "destructive"}
+                                          className={!patientDocument ? "text-white" : undefined}
+                                        >
+                                          {patientDocument ? "Ready" : "Pending"}
+                                        </Badge>
+                                      </div>
+                                      {patientDocument ? (
+                                        <div className="mt-3 grid gap-3 lg:grid-cols-[220px_1fr]">
+                                          <div className="relative h-32 overflow-hidden rounded-lg border bg-black/5">
+                                            <PreviewImage
+                                              src={patientDocument.previewDataUrl}
+                                              label={`${patient.name} document preview`}
+                                              fallbackFile={patientDocument.file}
+                                            />
+                                          </div>
+                                          <div className="grid gap-2 rounded-xl border border-border/70 bg-background/40 p-3 text-xs sm:grid-cols-2">
+                                            <p>
+                                              <span className="text-muted-foreground">Type: </span>
+                                              {patientDocument.documentType === "EID_FRONT"
+                                                ? "EID Front"
+                                                : "Passport Front"}
+                                            </p>
+                                            <p>
+                                              <span className="text-muted-foreground">Document No: </span>
+                                              {patientDocument.extractedData.documentNumber || "-"}
+                                            </p>
+                                            <p>
+                                              <span className="text-muted-foreground">Full Name: </span>
+                                              {patientDocument.extractedData.fullName || "-"}
+                                            </p>
+                                            <p>
+                                              <span className="text-muted-foreground">Gender: </span>
+                                              {patientDocument.extractedData.gender || "-"}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  )
+                                })}
+                              {!isSampleDocumentReady ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="mobile-touch-target h-10 rounded-xl"
+                                  onClick={() => setActiveSection("patients")}
+                                >
+                                  Go to Patient Details
+                                </Button>
                               ) : null}
                             </div>
-                          ) : (
+                          ) : activeFrontDocument ? (
                             <div className="space-y-2">
-                              <div className="grid gap-2 sm:grid-cols-2">
-                                <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-medium">EID Front</p>
-                                    <p className="text-muted-foreground truncate text-[11px]">
-                                      {eidFrontDocument?.file.name || "-"}
-                                    </p>
-                                  </div>
-                                  <Badge
-                                    variant={eidFrontDocument ? "secondary" : "outline"}
-                                  >
-                                    {eidFrontDocument ? "Processed" : "Pending"}
-                                  </Badge>
-                                </div>
-                                <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-medium">EID Back</p>
-                                    <p className="text-muted-foreground truncate text-[11px]">
-                                      {eidBackDocument?.file.name || "-"}
-                                    </p>
-                                  </div>
-                                  <Badge
-                                    variant={eidBackDocument ? "secondary" : "outline"}
-                                  >
-                                    {eidBackDocument ? "Processed" : "Pending"}
-                                  </Badge>
-                                </div>
+                              <div className="rounded-lg border border-border/70 px-3 py-2">
+                                <p className="text-xs font-medium">
+                                  {activeFrontDocument.documentType === "EID_FRONT"
+                                    ? "EID Front"
+                                    : "Passport Front"}
+                                </p>
+                                <p className="text-muted-foreground truncate text-[11px]">
+                                  {activeFrontDocument.file.name}
+                                </p>
                               </div>
-                              {eidFrontDocument || eidBackDocument ? (
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                  {eidFrontDocument ? (
-                                    <div className="space-y-1">
-                                      <p className="text-muted-foreground text-[11px]">
-                                        EID front preview (auto-cropped)
-                                      </p>
-                                      <div className="relative h-40 w-full overflow-hidden rounded-md border bg-black/5">
-                                        <PreviewImage
-                                          src={eidFrontDocument.previewDataUrl}
-                                          label="EID front preview"
-                                          fallbackFile={eidFrontDocument.file}
-                                        />
-                                      </div>
-                                      <div className="grid gap-1 rounded-md border p-2 text-xs">
-                                        <p>
-                                          <span className="text-muted-foreground">
-                                            Full Name:{" "}
-                                          </span>
-                                          {eidFrontDocument.extractedData.fullName || "-"}
-                                        </p>
-                                        <p>
-                                          <span className="text-muted-foreground">
-                                            Document No:{" "}
-                                          </span>
-                                          {eidFrontDocument.extractedData.documentNumber || "-"}
-                                        </p>
-                                        <p>
-                                          <span className="text-muted-foreground">
-                                            Starts with 784:{" "}
-                                          </span>
-                                          {eidFrontDocument.validation.startsWith784
-                                            ? "Yes"
-                                            : "No"}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  ) : null}
-                                  {eidBackDocument ? (
-                                    <div className="space-y-1">
-                                      <p className="text-muted-foreground text-[11px]">
-                                        EID back preview (auto-cropped)
-                                      </p>
-                                      <div className="relative h-40 w-full overflow-hidden rounded-md border bg-black/5">
-                                        <PreviewImage
-                                          src={eidBackDocument.previewDataUrl}
-                                          label="EID back preview"
-                                          fallbackFile={eidBackDocument.file}
-                                        />
-                                      </div>
-                                    </div>
-                                  ) : null}
-                                </div>
-                              ) : null}
                             </div>
-                          )}
+                          ) : null}
 
                           {sampleErrorMessage ? (
                             <div className="space-y-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-600 dark:text-rose-300">
@@ -1953,9 +2260,7 @@ export function BookingFormDialog({
                                 </p>
                               ) : null}
                               {sampleErrorDetails?.errorId ? (
-                                <p className="text-[11px]">
-                                  Error ID: {sampleErrorDetails.errorId}
-                                </p>
+                                <p className="text-[11px]">Error ID: {sampleErrorDetails.errorId}</p>
                               ) : null}
                               <div className="flex flex-wrap gap-2">
                                 {sampleErrorDetails?.retryable && lastDocumentScan ? (
@@ -1985,32 +2290,85 @@ export function BookingFormDialog({
                             </div>
                           ) : null}
 
+                          {!isSampleCollected && !isCompletedBooking ? (
+                            <div className="rounded-md border border-border/70 bg-card/40 px-3 py-2 text-xs text-muted-foreground">
+                              No booking API is called during scan review. The collector API is only called when you confirm
+                              <span className="font-medium text-foreground"> Mark as Sample Collected</span>.
+                            </div>
+                          ) : null}
+
                           <ProcessingDocumentState documentType={processingDocumentType} />
 
-                          <Separator />
-
-                          <Button
-                            type="button"
-                            className="mobile-touch-target h-10 w-full rounded-xl sm:w-auto"
-                            disabled={
-                              (requiresDocumentProof && !isSampleDocumentReady) ||
-                              isSubmittingSample ||
-                              isDocumentProcessing
-                            }
-                            onClick={() => {
-                              void handleSampleSubmit()
-                            }}
-                          >
-                            {isSubmittingSample
-                              ? "Submitting..."
-                              : "Submit Sample Collection"}
-                          </Button>
+                          {isSampleCollected ? (
+                            <Button
+                              type="button"
+                              disabled
+                              className="mobile-touch-target h-12 w-full rounded-xl border border-emerald-500/35 bg-emerald-500/15 text-emerald-700 opacity-100 disabled:cursor-default disabled:opacity-100 dark:text-emerald-300"
+                            >
+                              <CheckCircle2 className="size-4" />
+                              Marked as Sample Collected
+                            </Button>
+                          ) : isCompletedBooking ? (
+                            <div className="rounded-xl border border-border/70 bg-card/40 px-4 py-3 text-center text-sm font-medium text-muted-foreground">
+                              {sampleStatusDescription}
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <Button
+                                type="button"
+                                className="mobile-touch-target h-12 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+                                disabled={!sampleFlowCanSubmit}
+                                onClick={openSampleSubmitConfirm}
+                              >
+                                {isSubmittingSample ? (
+                                  <>
+                                    <Loader2 className="size-4 animate-spin" />
+                                    Submitting...
+                                  </>
+                                ) : (
+                                  "Mark as Sample Collected"
+                                )}
+                              </Button>
+                              <p className="text-muted-foreground text-center text-xs">
+                                Confirm submission in the next step.
+                              </p>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
-                    </>
-                  ) : null}
+                  </>
                 </section>
               ) : null}
+
+              <Dialog
+                open={isSampleSubmitConfirmOpen}
+                onOpenChange={setIsSampleSubmitConfirmOpen}
+              >
+                <DialogContent className="max-w-sm rounded-2xl p-5">
+                  <DialogHeader>
+                    <DialogTitle>Confirm Sample Submission</DialogTitle>
+                    <DialogDescription>
+                      Submit this booking sample collection now?
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsSampleSubmitConfirmOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={!sampleFlowCanSubmit || isSubmittingSample}
+                      onClick={confirmSampleSubmit}
+                    >
+                      {isSubmittingSample ? "Submitting..." : "Confirm Submit"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
 
               <div className="hidden justify-end border-t pt-4 md:flex">
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -2018,44 +2376,39 @@ export function BookingFormDialog({
                 </Button>
               </div>
             </div>
-            <div className="safe-area-bottom border-t border-border/70 bg-background/95 p-3 shadow-[0_-8px_20px_rgba(0,0,0,0.08)] backdrop-blur md:hidden">
+            <div className="safe-area-bottom border-t border-border/70 bg-background/95 p-3 shadow-[0_-8px_20px_rgba(0,0,0,0.08)] backdrop-blur lg:hidden">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <Button
                   type="button"
                   variant="outline"
                   className="mobile-touch-target h-11 rounded-xl"
-                  disabled={isSavingPatients}
-                  onClick={() => {
-                    setActiveSection("patients")
-                    void handleSavePatients()
-                  }}
+                  onClick={() => onOpenChange(false)}
                 >
-                  {isSavingPatients ? "Saving..." : "Save"}
+                  Close
                 </Button>
                 <Button
                   type="button"
                   className="mobile-touch-target h-11 rounded-xl"
-                  disabled={isSubmittingSample || isDocumentProcessing}
+                  disabled={activeSection === primarySection}
                   onClick={() => {
-                    if (activeSection !== "sample" || !showSampleCollection) {
-                      setActiveSection("sample")
-                      setShowSampleCollection(true)
-                      return
+                    if (activeSection !== primarySection) {
+                      setActiveSection(primarySection)
                     }
-                    void handleSampleSubmit()
                   }}
                 >
-                  {isSubmittingSample
-                    ? "Submitting..."
-                    : activeSection !== "sample" || !showSampleCollection
-                    ? "Submit Sample"
-                    : "Submit Sample"}
+                  {activeSection === primarySection
+                    ? "Current Workflow Section"
+                    : primarySection === "patients"
+                    ? "Go to Patient Details"
+                    : primarySection === "sample"
+                    ? "Go to Sample"
+                    : "Go to Booking"}
                 </Button>
               </div>
             </div>
           </main>
         </SidebarProvider>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   )
 }

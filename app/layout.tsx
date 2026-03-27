@@ -6,10 +6,10 @@ import { PwaServiceWorker } from "@/components/pwa/pwa-service-worker"
 import { NativeMobileBridge } from "@/components/capacitor/native-mobile-bridge"
 import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
-import { Geist } from "next/font/google";
-import { cn } from "@/lib/utils";
+import { Geist } from "next/font/google"
+import { cn } from "@/lib/utils"
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans" })
 
 export const metadata: Metadata = {
   title: "DarDoc",
@@ -38,17 +38,16 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#119da4" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f1419" },
+    { media: "(prefers-color-scheme: light)", color: "#123335" },
+    { media: "(prefers-color-scheme: dark)", color: "#123335" },
   ],
 }
 
 export const dynamic = "force-dynamic"
 
 const signInUrl = process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL || "/sign-in"
-const signUpUrl = process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL || signInUrl
-const afterSignInUrl = "/dashboard/bookings"
-const afterSignUpUrl = "/dashboard/bookings"
+const signUpUrl = process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL || "/sign-up"
+const fallbackRedirectUrl = "/dashboard/bookings"
 
 export default function RootLayout({
   children,
@@ -60,10 +59,16 @@ export default function RootLayout({
       dynamic
       signInUrl={signInUrl}
       signUpUrl={signUpUrl}
-      afterSignInUrl={afterSignInUrl}
-      afterSignUpUrl={afterSignUpUrl}
+      signInFallbackRedirectUrl={fallbackRedirectUrl}
+      signUpFallbackRedirectUrl={fallbackRedirectUrl}
+      signInForceRedirectUrl={fallbackRedirectUrl}
+      signUpForceRedirectUrl={fallbackRedirectUrl}
     >
-      <html lang="en" suppressHydrationWarning className={cn("font-sans", geist.variable)}>
+      <html
+        lang="en"
+        suppressHydrationWarning
+        className={cn("font-sans", geist.variable)}
+      >
         <body suppressHydrationWarning className="font-sans antialiased">
           <ThemeProvider
             attribute="class"

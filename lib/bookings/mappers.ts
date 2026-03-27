@@ -107,6 +107,10 @@ function parseNumberOrNull(value: unknown): number | null {
   return null
 }
 
+function getStringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null
+}
+
 export function mapCollectorBookingToTableRow(
   item: CollectorBookingItem
 ): BookingTableRow {
@@ -114,39 +118,76 @@ export function mapCollectorBookingToTableRow(
   const primaryPatientName = patients[0]?.name || "Patient"
   const additionalPatients = Math.max(0, patients.length - 1)
   const rawItem = item as unknown as Record<string, unknown>
+  const nestedLocation =
+    rawItem.location && typeof rawItem.location === "object"
+      ? (rawItem.location as Record<string, unknown>)
+      : undefined
   const latitude =
     parseNumberOrNull(item.location_latitude) ??
     parseNumberOrNull(rawItem.latitude) ??
     parseNumberOrNull(rawItem.lat) ??
-    parseNumberOrNull((rawItem.location as Record<string, unknown> | undefined)?.latitude) ??
-    parseNumberOrNull((rawItem.location as Record<string, unknown> | undefined)?.lat)
+    parseNumberOrNull(nestedLocation?.latitude) ??
+    parseNumberOrNull(nestedLocation?.lat)
   const longitude =
     parseNumberOrNull(item.location_longitude) ??
     parseNumberOrNull(rawItem.longitude) ??
     parseNumberOrNull(rawItem.lng) ??
-    parseNumberOrNull((rawItem.location as Record<string, unknown> | undefined)?.longitude) ??
-    parseNumberOrNull((rawItem.location as Record<string, unknown> | undefined)?.lng)
+    parseNumberOrNull(nestedLocation?.longitude) ??
+    parseNumberOrNull(nestedLocation?.lng)
   const locationAddress =
     item.location_address ??
     (typeof rawItem.address === "string" ? rawItem.address : null) ??
     (typeof rawItem.location_address === "string" ? rawItem.location_address : null) ??
+    (typeof nestedLocation?.formatted === "string" ? nestedLocation.formatted : null) ??
     (typeof rawItem.service_address === "string" ? rawItem.service_address : null) ??
     (typeof rawItem.customer_address === "string" ? rawItem.customer_address : null)
   const locationLabel =
     item.location_label ??
     (typeof rawItem.location_label === "string" ? rawItem.location_label : null) ??
     (typeof rawItem.location_name === "string" ? rawItem.location_name : null)
+  const nestedCustomer =
+    rawItem.customer && typeof rawItem.customer === "object"
+      ? (rawItem.customer as Record<string, unknown>)
+      : undefined
+  const customerPhone =
+    getStringOrNull(item.customer_phone) ??
+    getStringOrNull(rawItem.customer_phone) ??
+    getStringOrNull(rawItem.phone) ??
+    getStringOrNull(rawItem.phone_number) ??
+    getStringOrNull(rawItem.mobile) ??
+    getStringOrNull(rawItem.mobile_number) ??
+    getStringOrNull(rawItem.customer_mobile) ??
+    getStringOrNull(rawItem.customer_phone_number) ??
+    getStringOrNull(nestedCustomer?.phone) ??
+    getStringOrNull(nestedCustomer?.phone_number) ??
+    getStringOrNull(nestedCustomer?.mobile) ??
+    getStringOrNull(nestedCustomer?.mobile_number)
 
   return {
     bookingId: item.order_id || `BK-${item.booking_id}`,
     apiBookingId: item.booking_id,
     orderId: item.order_id || null,
+    customerPhone,
     bookingStatusRaw: item.booking_status,
     orderStatus: item.order_status ?? null,
     resourceType: item.resource_type ?? null,
     resourceId: item.resource_id ?? null,
+    locationId:
+      typeof nestedLocation?.address_id === "string" ? nestedLocation.address_id : null,
     locationLabel,
     locationAddress,
+    locationLine1: typeof nestedLocation?.line1 === "string" ? nestedLocation.line1 : null,
+    locationLine2: typeof nestedLocation?.line2 === "string" ? nestedLocation.line2 : null,
+    locationBuildingName:
+      typeof nestedLocation?.building_name === "string" ? nestedLocation.building_name : null,
+    locationFloorNumber:
+      typeof nestedLocation?.floor_number === "string" ? nestedLocation.floor_number : null,
+    locationArea: typeof nestedLocation?.area === "string" ? nestedLocation.area : null,
+    locationCity: typeof nestedLocation?.city === "string" ? nestedLocation.city : null,
+    locationEmirate:
+      typeof nestedLocation?.emirate === "string" ? nestedLocation.emirate : null,
+    locationCountry:
+      typeof nestedLocation?.country === "string" ? nestedLocation.country : null,
     locationLatitude: latitude,
     locationLongitude: longitude,
     startAt: item.start_at,

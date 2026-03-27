@@ -10,8 +10,8 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: #123335;
+  --primary-foreground: #f5fbfb;
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
@@ -21,15 +21,15 @@
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --ring: #123335;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary: #123335;
+  --sidebar-primary-foreground: #f5fbfb;
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-ring: #123335;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --chart-1: oklch(0.87 0 0);
@@ -89,8 +89,8 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: #123335;
+  --primary-foreground: #f5fbfb;
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -100,15 +100,15 @@
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --ring: #123335;
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary: #123335;
+  --sidebar-primary-foreground: #f5fbfb;
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-ring: #123335;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -175,4 +175,82 @@
   textarea {
     font-size: 16px;
   }
+}
+
+/* react-easy-crop base styles */
+.reactEasyCrop_Container {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+  cursor: move;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.reactEasyCrop_Image,
+.reactEasyCrop_Video {
+  will-change: transform;
+}
+
+.reactEasyCrop_Contain {
+  max-width: 100%;
+  max-height: 100%;
+  margin: auto;
+  position: absolute;
+  inset: 0;
+}
+
+.reactEasyCrop_Cover_Horizontal {
+  width: 100%;
+  height: auto;
+}
+
+.reactEasyCrop_Cover_Vertical {
+  width: auto;
+  height: 100%;
+}
+
+.reactEasyCrop_CropArea {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-sizing: border-box;
+  box-shadow: 0 0 0 9999em rgba(0, 0, 0, 0.52);
+  color: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.reactEasyCrop_CropAreaRound {
+  border-radius: 50%;
+}
+
+.reactEasyCrop_CropAreaGrid::before {
+  content: " ";
+  box-sizing: border-box;
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  top: 0;
+  bottom: 0;
+  left: 33.33%;
+  right: 33.33%;
+  border-top: 0;
+  border-bottom: 0;
+}
+
+.reactEasyCrop_CropAreaGrid::after {
+  content: " ";
+  box-sizing: border-box;
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  top: 33.33%;
+  bottom: 33.33%;
+  left: 0;
+  right: 0;
+  border-left: 0;
+  border-right: 0;
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { BarChart3, CalendarCheck2 } from "lucide-react"
+import { CalendarCheck2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -11,11 +11,6 @@ const navItems = [
     label: "Bookings",
     href: "/dashboard/bookings",
     icon: CalendarCheck2,
-  },
-  {
-    label: "Revenue",
-    href: "/dashboard/revenue-tracker",
-    icon: BarChart3,
   },
 ]
 
@@ -27,7 +22,7 @@ export function MobileBottomNav() {
       className="safe-area-bottom fixed inset-x-0 bottom-0 z-50 px-3 pb-[calc(env(safe-area-inset-bottom)+0.55rem)] pt-2 md:hidden"
       aria-label="Primary navigation"
     >
-      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/82 mx-auto grid max-w-screen-sm grid-cols-2 gap-1 rounded-3xl border border-border/70 p-1.5 shadow-[0_-12px_28px_rgba(0,0,0,0.24)] backdrop-blur-xl">
+      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/82 mx-auto grid max-w-screen-sm grid-cols-1 gap-1 rounded-3xl border border-border/70 p-1.5 shadow-[0_-12px_28px_rgba(0,0,0,0.24)] backdrop-blur-xl">
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href)
 

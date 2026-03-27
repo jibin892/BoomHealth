@@ -4,10 +4,7 @@ import * as React from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useUser } from "@clerk/nextjs"
-import {
-  BarChart3,
-  CalendarCheck2,
-} from "lucide-react"
+import { CalendarCheck2 } from "lucide-react"
 
 import { NavMain } from '@/components/nav-main'
 import { NavUser } from '@/components/nav-user'
@@ -27,11 +24,7 @@ const data = {
       title: "Bookings",
       url: "/dashboard/bookings",
       icon: CalendarCheck2,
-    },
-    {
-      title: "Revenue Tracker",
-      url: "/dashboard/revenue-tracker",
-      icon: BarChart3,
+      description: "Collector queue and samples",
     },
   ],
 }

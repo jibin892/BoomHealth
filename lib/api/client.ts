@@ -22,11 +22,25 @@ export const apiClient = axios.create({
   timeout: 20_000,
   headers: {
     Accept: "application/json",
-    "Content-Type": "application/json",
   },
 })
 
 apiClient.interceptors.request.use((config) => {
+  const requestUrl = config.url || ""
+  const baseUrl = config.baseURL || ""
+  const targetUrl = `${baseUrl}${requestUrl}`
+  const method = (config.method || "get").toLowerCase()
+
+  if (targetUrl.includes("ngrok-free.dev")) {
+    config.headers.set("ngrok-skip-browser-warning", "true")
+  }
+
+  if (method === "get" || method === "head") {
+    config.headers.delete("Content-Type")
+  } else if (!config.headers.has("Content-Type")) {
+    config.headers.set("Content-Type", "application/json")
+  }
+
   ;(config as RequestWithMetadata).metadata = {
     startedAt: now(),
   }

@@ -1,19 +1,24 @@
 import { defineConfig, devices } from "@playwright/test"
 
+const e2ePort = Number(process.env.E2E_PORT || 3000)
+const baseUrl = `http://127.0.0.1:${e2ePort}`
+const reuseExistingServer =
+  process.env.E2E_USE_EXISTING_SERVER === "true" || !process.env.CI
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 90_000,
   fullyParallel: true,
   reporter: [["list"]],
   use: {
-    baseURL: "http://127.0.0.1:3000",
+    baseURL: baseUrl,
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "npm run dev -- --port 3000",
-    url: "http://127.0.0.1:3000",
+    command: `npm run dev -- --port ${e2ePort}`,
+    url: baseUrl,
     timeout: 180_000,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer,
     env: {
       E2E_BYPASS_AUTH: "true",
       NEXT_PUBLIC_CLERK_SIGN_IN_URL: "/sign-in",

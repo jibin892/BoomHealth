@@ -8,14 +8,15 @@ import { trackApiTelemetry } from "@/lib/observability/telemetry"
 
 type ProcessDocumentInput = {
   file: File
-  documentType: OpenAiDocumentType
+  documentType?: OpenAiDocumentType
 }
 
 type ProcessDocumentOutput = ProcessedDocumentPayload
 
 const CONFIDENCE_RETRY_THRESHOLD = 0.6
 const MAX_PROCESS_ATTEMPTS = 1
-const REQUEST_TIMEOUT_MS = 16_000
+// Client timeout must be slightly higher than API timeout so we do not abort early on browser side.
+const REQUEST_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_OPENAI_DOCUMENT_TIMEOUT_MS || 27_000)
 const MIN_COMPRESS_BYTES = 600 * 1024
 const MAX_IMAGE_DIMENSION = 1600
 const COMPRESS_QUALITY = 0.82
@@ -184,11 +185,14 @@ async function processDocumentImageInternal({
 
   const optimizedFile = await optimizeImageForProcessing(file)
   let bestAttempt: ProcessDocumentOutput | null = null
+  const telemetryDocumentType = documentType || "AUTO"
 
   for (let attempt = 1; attempt <= MAX_PROCESS_ATTEMPTS; attempt += 1) {
     const formData = new FormData()
     formData.append("file", optimizedFile)
-    formData.append("documentType", documentType)
+    if (documentType) {
+      formData.append("documentType", documentType)
+    }
 
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
@@ -214,7 +218,7 @@ async function processDocumentImageInternal({
             ? "timeout"
             : "network_error",
         metadata: {
-          documentType,
+          documentType: telemetryDocumentType,
         },
       })
       if (error instanceof Error && error.name === "AbortError") {
@@ -249,7 +253,7 @@ async function processDocumentImageInternal({
         statusCode: response.status,
         errorCode: isErrorPayload(payload) ? payload.reason || "scan_failed" : "scan_failed",
         metadata: {
-          documentType,
+          documentType: telemetryDocumentType,
         },
       })
       if (isErrorPayload(payload)) {
@@ -272,7 +276,7 @@ async function processDocumentImageInternal({
         statusCode: response.status,
         errorCode: "invalid_openai_response",
         metadata: {
-          documentType,
+          documentType: telemetryDocumentType,
         },
       })
       throw toDocumentProcessingError("Invalid document processing response.", {
@@ -292,7 +296,7 @@ async function processDocumentImageInternal({
         statusCode: response.status,
         errorCode: "missing_preview",
         metadata: {
-          documentType,
+          documentType: telemetryDocumentType,
         },
       })
       throw toDocumentProcessingError(
@@ -317,7 +321,7 @@ async function processDocumentImageInternal({
         success: true,
         statusCode: response.status,
         metadata: {
-          documentType,
+          documentType: telemetryDocumentType,
         },
       })
       return normalized
@@ -336,7 +340,7 @@ async function processDocumentImageInternal({
     durationMs: 0,
     success: true,
     metadata: {
-      documentType,
+      documentType: telemetryDocumentType,
       lowConfidence: true,
     },
   })

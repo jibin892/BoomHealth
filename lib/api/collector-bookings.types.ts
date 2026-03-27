@@ -26,10 +26,26 @@ export type CollectorBookingPatient = {
   tests_count?: number | null
 }
 
+export type CollectorBookingLocation = {
+  address_id?: string | null
+  line1?: string | null
+  building_name?: string | null
+  floor_number?: string | null
+  line2?: string | null
+  area?: string | null
+  city?: string | null
+  emirate?: string | null
+  country?: string | null
+  latitude?: number | string | null
+  longitude?: number | string | null
+  formatted?: string | null
+}
+
 export type CollectorBookingItem = {
   booking_id: number
   order_id?: string | null
   booking_status: CollectorBookingStatus | string
+  customer_phone?: string | null
   resource_type?: string | null
   resource_id?: string | null
   location_label?: string | null
@@ -47,6 +63,7 @@ export type CollectorBookingItem = {
   paid_at?: string | null
   patients?: CollectorBookingPatient[]
   patient_count?: number | null
+  location?: CollectorBookingLocation | null
 }
 
 export type CollectorBookingsResponse = {

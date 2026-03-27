@@ -1,4 +1,4 @@
-const FALLBACK_API_BASE_URL = "https://api-staging.dardoc.com"
+const FALLBACK_API_BASE_URL = "https://subrepand-troublesome-darrell.ngrok-free.dev"
 const FALLBACK_COLLECTOR_PARTY_ID = "BOOM_HEALTH"
 
 function trimTrailingSlash(value: string) {

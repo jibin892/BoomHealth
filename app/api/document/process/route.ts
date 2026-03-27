@@ -2,8 +2,6 @@ import { NextResponse } from "next/server"
 import { randomUUID } from "node:crypto"
 
 import {
-  OPENAI_DOCUMENT_TYPES,
-  type OpenAiDocumentType,
   type ProcessedDocumentErrorPayload,
   type ProcessedDocumentErrorReason,
   type ProcessedDocumentPayload,
@@ -11,13 +9,15 @@ import {
 import { captureObservedError, trackApiTelemetry } from "@/lib/observability/telemetry"
 
 const OPENAI_RESPONSES_API_URL = "https://api.openai.com/v1/responses"
-const REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_DOCUMENT_TIMEOUT_MS || 18_000)
+// Keep server-side scan timeout generous for heavier mobile captures.
+const REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_DOCUMENT_TIMEOUT_MS || 24_000)
 const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024
 const OPENAI_DOCUMENT_MODEL = process.env.OPENAI_DOCUMENT_MODEL || "gpt-4.1-mini"
 const MIN_CONFIDENCE_UNSUPPORTED = 0.35
 const MIN_CONFIDENCE_PASSPORT = 0.5
 const MIN_CONFIDENCE_EID_FRONT = 0.5
-const MIN_CONFIDENCE_EID_BACK = 0.45
+const EXTRACTABLE_DOCUMENT_TYPES = ["PASSPORT", "EID_FRONT"] as const
+type ExtractableDocumentType = (typeof EXTRACTABLE_DOCUMENT_TYPES)[number]
 
 const ALLOWED_IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
@@ -53,7 +53,7 @@ const JSON_SCHEMA = {
   properties: {
     documentType: {
       type: "string",
-      enum: OPENAI_DOCUMENT_TYPES,
+      enum: EXTRACTABLE_DOCUMENT_TYPES,
     },
     extractedData: {
       type: "object",
@@ -75,15 +75,26 @@ const JSON_SCHEMA = {
         startsWith784: { type: "boolean" },
       },
     },
-    croppedDocumentImageBase64: { type: "string" },
-    confidenceScore: { type: "number" },
+    croppedDocumentImageBase64: {
+      type: "string",
+      minLength: 100,
+    },
+    confidenceScore: {
+      type: "number",
+      minimum: 0,
+      maximum: 1,
+    },
   },
 } as const
 
 type OpenAiResponse = {
   output_text?: string
   output?: Array<{
-    content?: Array<{ type?: string; text?: string }>
+    content?: Array<{
+      type?: string
+      text?: string
+      json?: unknown
+    }>
   }>
 }
 
@@ -108,10 +119,6 @@ function toError(
   }
 }
 
-function isDocumentType(value: string): value is OpenAiDocumentType {
-  return OPENAI_DOCUMENT_TYPES.includes(value as OpenAiDocumentType)
-}
-
 function extractOutputText(payload: OpenAiResponse) {
   if (typeof payload.output_text === "string" && payload.output_text.length > 0) {
     return payload.output_text
@@ -130,6 +137,18 @@ function extractOutputText(payload: OpenAiResponse) {
   }
 
   return chunks.join("\n").trim()
+}
+
+function extractOutputJson(payload: OpenAiResponse): unknown | null {
+  for (const item of payload.output || []) {
+    for (const content of item.content || []) {
+      if (content.type === "output_json" && content.json) {
+        return content.json
+      }
+    }
+  }
+
+  return null
 }
 
 function parseJsonResponse(text: string): unknown {
@@ -263,7 +282,7 @@ function hasSupportedImageSignature(buffer: Buffer) {
 
 function toNormalizedPayload(
   value: unknown,
-  expectedType: OpenAiDocumentType
+  expectedType?: ExtractableDocumentType | null
 ): ProcessedDocumentPayload | null {
   if (!value || typeof value !== "object") return null
 
@@ -298,8 +317,22 @@ function toNormalizedPayload(
     return null
   }
 
+  const modelDocumentTypeRaw =
+    typeof record.documentType === "string"
+      ? record.documentType.trim().toUpperCase()
+      : ""
+  const modelDocumentType =
+    modelDocumentTypeRaw === "PASSPORT" || modelDocumentTypeRaw === "EID_FRONT"
+      ? (modelDocumentTypeRaw as ExtractableDocumentType)
+      : null
+  const resolvedDocumentType = expectedType || modelDocumentType
+
+  if (!resolvedDocumentType) {
+    return null
+  }
+
   const payload: ProcessedDocumentPayload = {
-    documentType: expectedType,
+    documentType: resolvedDocumentType,
     extractedData: {
       fullName:
         typeof extractedData.fullName === "string"
@@ -344,7 +377,7 @@ function toNormalizedPayload(
     payload.validation.isValidEID = startsWith784 && payload.validation.isValidEID
   }
 
-  if (payload.documentType === "PASSPORT" || payload.documentType === "EID_BACK") {
+  if (payload.documentType === "PASSPORT") {
     payload.validation = DEFAULT_VALIDATION
   }
 
@@ -360,13 +393,27 @@ function normalizeDocumentNumber(value: string) {
 
 function getDocumentValidationError(
   payload: ProcessedDocumentPayload,
-  expectedType: OpenAiDocumentType
+  expectedType?: ExtractableDocumentType | null
 ) {
+  const payloadType =
+    payload.documentType === "PASSPORT" || payload.documentType === "EID_FRONT"
+      ? (payload.documentType as ExtractableDocumentType)
+      : null
+  const effectiveType = expectedType || payloadType
+
+  if (!effectiveType) {
+    return "Unsupported document. Please upload a valid Passport front page or Emirates ID front."
+  }
+
+  if (expectedType && payloadType && expectedType !== payloadType) {
+    return "Detected document type does not match expected type. Please upload the correct front side."
+  }
+
   if (payload.confidenceScore < MIN_CONFIDENCE_UNSUPPORTED) {
     return "Unsupported document. Please upload or capture a valid Passport or Emirates ID."
   }
 
-  if (expectedType === "PASSPORT") {
+  if (effectiveType === "PASSPORT") {
     const passportNumber = normalizeDocumentNumber(payload.extractedData.documentNumber)
     const hasPassportNumber = passportNumber.length >= 5
     const hasName = payload.extractedData.fullName.trim().length >= 3
@@ -380,7 +427,7 @@ function getDocumentValidationError(
     }
   }
 
-  if (expectedType === "EID_FRONT") {
+  if (effectiveType === "EID_FRONT") {
     const documentNumber = normalizeDocumentNumber(payload.extractedData.documentNumber)
     const startsWith784 = documentNumber.startsWith("784")
 
@@ -393,30 +440,42 @@ function getDocumentValidationError(
     }
   }
 
-  if (expectedType === "EID_BACK" && payload.confidenceScore < MIN_CONFIDENCE_EID_BACK) {
-    return "This is not a valid Emirates ID back. Please upload or capture the EID back side."
-  }
-
   return null
 }
 
-function buildInstructionPrompt(documentType: OpenAiDocumentType) {
+function buildInstructionPrompt(preferredType: ExtractableDocumentType | null) {
+  const preferredHint = preferredType
+    ? `Preferred document type: ${preferredType === "PASSPORT" ? "Passport front page" : "Emirates ID front"}`
+    : "No preferred type provided. Auto-detect document type from the image."
+
   return [
-    "You are an OCR + document cleanup processor.",
-    `Expected document type: ${documentType}.`,
-    "Process the provided image before any preview is shown:",
-    "1) Detect document edges.",
-    "2) Perspective-correct the document.",
-    "3) Remove all background noise (hands, fingers, shadows, table).",
-    "4) Return a tightly cropped professional scanner-style result.",
-    "For PASSPORT and EID_FRONT extract: fullName, gender, documentNumber, nationality.",
-    "For EID_BACK extraction fields can be empty strings.",
-    "For EID_FRONT, startsWith784 must reflect whether documentNumber begins with 784.",
-    "If the image is not the expected document type, do not hallucinate values.",
-    "For unsupported documents, keep extracted fields empty and set confidenceScore to 0.2 or lower.",
+    "You are a strict OCR extractor for identity documents.",
+    "Auto-detect whether the image is PASSPORT front or EID_FRONT.",
+    preferredHint,
+    "Goal: detect type accurately and extract only valid fields.",
+    "",
+    "Accuracy rules (must follow):",
+    "1) Detect documentType as PASSPORT or EID_FRONT.",
+    "2) Never guess or hallucinate missing characters.",
+    "3) If a field is unclear, return empty string for that field.",
+    "4) If image is not PASSPORT front or EID front, set confidenceScore <= 0.2 and leave fields empty.",
+    "5) Preserve text exactly as seen (letters, digits, spaces).",
+    "",
+    "Image processing requirements:",
+    "1) Detect the OUTER document boundary and all 4 corners.",
+    "2) Perspective-correct so the document is a clean rectangle.",
+    "3) Keep all document edges fully visible (no clipped corners or cut text).",
+    "4) Include a tiny safe margin (about 2% of width/height) around the document edge.",
+    "5) Remove background clutter (hands, fingers, table, shadows) as much as possible.",
+    "6) Return a scanner-style crop only (upright orientation, readable text).",
+    "",
+    "Extraction requirements:",
+    "Extract only these fields: fullName, gender, documentNumber, nationality.",
+    "For EID_FRONT, startsWith784 must be true only when documentNumber starts exactly with 784.",
     "Return ONLY strict JSON that matches the provided schema.",
-    "croppedDocumentImageBase64 must be raw base64 without data URL prefix.",
-    "If image is unclear, return low confidenceScore (<0.6) and best effort fields.",
+    "croppedDocumentImageBase64 must be a RAW BASE64 STRING only.",
+    "Do not include data URL prefix, markdown, quotes wrapper, or line breaks.",
+    "If image is unclear, return low confidenceScore (<0.6) with best effort extraction.",
   ].join("\n")
 }
 
@@ -451,17 +510,14 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData()
 
-    const documentTypeValue = String(formData.get("documentType") || "").trim()
-    if (!isDocumentType(documentTypeValue)) {
-      return respond(
-        toError("Invalid document type.", {
-          reason: "invalid_document_type",
-          retryable: false,
-        }),
-        400,
-        { errorCode: "invalid_document_type" }
-      )
-    }
+    const requestedDocumentTypeRaw = String(formData.get("documentType") || "")
+      .trim()
+      .toUpperCase()
+    const preferredType: ExtractableDocumentType | null =
+      requestedDocumentTypeRaw === "PASSPORT" || requestedDocumentTypeRaw === "EID_FRONT"
+        ? (requestedDocumentTypeRaw as ExtractableDocumentType)
+        : null
+    const telemetryDocumentType = preferredType || "AUTO"
 
     const fileEntry = formData.get("file")
     if (!(fileEntry instanceof File)) {
@@ -471,7 +527,7 @@ export async function POST(request: Request) {
           retryable: false,
         }),
         400,
-        { errorCode: "file_required", documentType: documentTypeValue }
+        { errorCode: "file_required", documentType: telemetryDocumentType }
       )
     }
 
@@ -482,7 +538,7 @@ export async function POST(request: Request) {
           retryable: false,
         }),
         415,
-        { errorCode: "unsupported_file_type", documentType: documentTypeValue }
+        { errorCode: "unsupported_file_type", documentType: telemetryDocumentType }
       )
     }
 
@@ -493,7 +549,7 @@ export async function POST(request: Request) {
           retryable: false,
         }),
         413,
-        { errorCode: "file_too_large", documentType: documentTypeValue }
+        { errorCode: "file_too_large", documentType: telemetryDocumentType }
       )
     }
 
@@ -506,7 +562,7 @@ export async function POST(request: Request) {
           retryable: false,
         }),
         500,
-        { errorCode: "document_not_configured", documentType: documentTypeValue }
+        { errorCode: "document_not_configured", documentType: telemetryDocumentType }
       )
     }
 
@@ -518,7 +574,7 @@ export async function POST(request: Request) {
           retryable: false,
         }),
         415,
-        { errorCode: "unsupported_file_type", documentType: documentTypeValue }
+        { errorCode: "unsupported_file_type", documentType: telemetryDocumentType }
       )
     }
 
@@ -544,7 +600,7 @@ export async function POST(request: Request) {
               content: [
                 {
                   type: "input_text",
-                  text: buildInstructionPrompt(documentTypeValue),
+                  text: buildInstructionPrompt(preferredType),
                 },
                 {
                   type: "input_image",
@@ -581,14 +637,15 @@ export async function POST(request: Request) {
           retryable,
         }),
         response.status,
-        { errorCode: "openai_request_failed", documentType: documentTypeValue }
+        { errorCode: "openai_request_failed", documentType: telemetryDocumentType }
       )
     }
 
     const responsePayload = (await response.json()) as OpenAiResponse
-    const outputText = extractOutputText(responsePayload)
+    const outputJson = extractOutputJson(responsePayload)
+    const outputText = outputJson ? null : extractOutputText(responsePayload)
 
-    if (!outputText) {
+    if (!outputJson && !outputText) {
       return respond(
         toError("Document not clear. Please recapture.", {
           confidenceScore: 0.5,
@@ -596,25 +653,27 @@ export async function POST(request: Request) {
           retryable: true,
         }),
         422,
-        { errorCode: "invalid_openai_response", documentType: documentTypeValue }
+        { errorCode: "invalid_openai_response", documentType: telemetryDocumentType }
       )
     }
 
-    let parsed: unknown
-    try {
-      parsed = parseJsonResponse(outputText)
-    } catch {
-      return respond(
-        toError("Invalid AI response. Please retry scanning.", {
-          reason: "invalid_openai_response",
-          retryable: true,
-        }),
-        422,
-        { errorCode: "invalid_openai_response", documentType: documentTypeValue }
-      )
+    let parsed: unknown = outputJson
+    if (!parsed) {
+      try {
+        parsed = parseJsonResponse(outputText as string)
+      } catch {
+        return respond(
+          toError("Invalid AI response. Please retry scanning.", {
+            reason: "invalid_openai_response",
+            retryable: true,
+          }),
+          422,
+          { errorCode: "invalid_openai_response", documentType: telemetryDocumentType }
+        )
+      }
     }
 
-    const normalized = toNormalizedPayload(parsed, documentTypeValue)
+    const normalized = toNormalizedPayload(parsed, preferredType)
 
     if (!normalized) {
       return respond(
@@ -624,11 +683,11 @@ export async function POST(request: Request) {
           retryable: true,
         }),
         422,
-        { errorCode: "document_not_clear", documentType: documentTypeValue }
+        { errorCode: "document_not_clear", documentType: telemetryDocumentType }
       )
     }
 
-    const validationError = getDocumentValidationError(normalized, documentTypeValue)
+    const validationError = getDocumentValidationError(normalized, preferredType)
     if (validationError) {
       return respond(
         toError(validationError, {
@@ -637,13 +696,13 @@ export async function POST(request: Request) {
           retryable: true,
         }),
         422,
-        { errorCode: "validation_failed", documentType: documentTypeValue }
+        { errorCode: "validation_failed", documentType: telemetryDocumentType }
       )
     }
 
     return respond(normalized, 200, {
       success: true,
-      documentType: documentTypeValue,
+      documentType: normalized.documentType,
     })
   } catch (error) {
     const message =

@@ -36,8 +36,8 @@ export default function AppError({ error, reset }: AppErrorProps) {
   )}`
 
   return (
-    <main className="safe-area-top safe-area-bottom min-h-svh p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-3xl">
+    <main className="safe-area-top safe-area-bottom flex min-h-svh items-center justify-center p-4 sm:p-6 lg:p-8">
+      <div className="mx-auto flex w-full max-w-3xl items-center justify-center">
         <PageErrorState
           title={errorPresentation.title}
           description={errorPresentation.description}

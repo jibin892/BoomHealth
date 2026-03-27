@@ -3,7 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 function OverviewCardSkeleton() {
   return (
-    <Card className="from-primary/10 via-card to-card mobile-surface bg-gradient-to-br">
+    <Card className="rounded-2xl border border-border/70 bg-gradient-to-br from-primary/10 via-card to-card shadow-none">
       <CardHeader className="space-y-3">
         <Skeleton className="h-4 w-32" />
         <Skeleton className="h-8 w-16" />
@@ -18,7 +18,7 @@ function OverviewCardSkeleton() {
 
 function MobileBookingCardSkeleton() {
   return (
-    <div className="mobile-surface p-4">
+    <div className="mobile-surface p-4 shadow-none">
       <div className="space-y-2 border-b border-border/60 pb-3">
         <Skeleton className="h-3 w-20" />
         <div className="flex items-center justify-between gap-2">
@@ -74,7 +74,7 @@ export function BookingsPageSkeleton() {
       </div>
 
       <div className="mobile-page-shell pb-4 lg:pb-6">
-        <Card className="shadow-sm">
+        <Card className="shadow-none">
           <CardHeader className="space-y-3">
             <Skeleton className="h-6 w-44" />
             <Skeleton className="h-4 w-72 max-w-full" />
