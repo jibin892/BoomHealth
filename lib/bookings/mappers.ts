@@ -210,9 +210,8 @@ export function mapCollectorBookingToTableRow(
 
 export function buildBookingOverviewCards(rows: BookingTableRow[]): OverviewCardItem[] {
   const total = rows.length
-  const pending = rows.filter((row) => row.status === "Pending").length
   const active = rows.filter((row) => row.status === "Confirmed").length
-  const completed = rows.filter((row) => row.status === "Result Ready").length
+  const cancelled = rows.filter((row) => row.status === "Cancelled").length
 
   return [
     {
@@ -223,13 +222,6 @@ export function buildBookingOverviewCards(rows: BookingTableRow[]): OverviewCard
       trend: "up",
     },
     {
-      title: "Pending Confirmation",
-      value: String(pending),
-      change: "Live",
-      summary: "Requires confirmation from operations",
-      trend: pending > 0 ? "up" : "down",
-    },
-    {
       title: "Active Bookings",
       value: String(active),
       change: "Live",
@@ -237,11 +229,11 @@ export function buildBookingOverviewCards(rows: BookingTableRow[]): OverviewCard
       trend: active > 0 ? "up" : "down",
     },
     {
-      title: "Results Delivered",
-      value: String(completed),
+      title: "Cancelled Bookings",
+      value: String(cancelled),
       change: "Live",
-      summary: "Marked fulfilled and ready for patients",
-      trend: completed > 0 ? "up" : "down",
+      summary: "Bookings cancelled and no longer actionable",
+      trend: cancelled > 0 ? "up" : "down",
     },
   ]
 }

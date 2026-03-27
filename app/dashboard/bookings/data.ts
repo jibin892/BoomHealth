@@ -77,14 +77,11 @@ export const bookingRows: BookingTableRow[] = Array.from(
   }
 )
 
-const pendingCount = bookingRows.filter(
-  (booking) => booking.status === "Pending"
-).length
 const activeCount = bookingRows.filter(
   (booking) => booking.status === "Confirmed"
 ).length
-const resultReadyCount = bookingRows.filter(
-  (booking) => booking.status === "Result Ready"
+const cancelledCount = bookingRows.filter(
+  (booking) => booking.status === "Cancelled"
 ).length
 
 export const bookingOverviewCards: OverviewCardItem[] = [
@@ -96,13 +93,6 @@ export const bookingOverviewCards: OverviewCardItem[] = [
     trend: "up",
   },
   {
-    title: "Pending Confirmation",
-    value: `${pendingCount}`,
-    change: "-8.1%",
-    summary: "Pending callbacks by operations",
-    trend: "down",
-  },
-  {
     title: "Active Bookings",
     value: `${activeCount}`,
     change: "+5.7%",
@@ -110,10 +100,10 @@ export const bookingOverviewCards: OverviewCardItem[] = [
     trend: "up",
   },
   {
-    title: "Results Delivered",
-    value: `${resultReadyCount}`,
-    change: "+10.2%",
-    summary: "Delivered to patients this week",
-    trend: "up",
+    title: "Cancelled Bookings",
+    value: `${cancelledCount}`,
+    change: "-2.1%",
+    summary: "Bookings cancelled and removed from action queue",
+    trend: "down",
   },
 ]

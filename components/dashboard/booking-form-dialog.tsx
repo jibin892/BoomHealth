@@ -22,6 +22,7 @@ import {
   getDocumentProcessingErrorDetails,
   processDocumentImage,
 } from "@/lib/api/document-processing"
+import { cn } from "@/lib/utils"
 import { triggerHapticFeedback } from "@/lib/mobile/haptics"
 import {
   getApiErrorCode,
@@ -162,7 +163,7 @@ const sectionItems = [
   {
     key: "patients" as const,
     name: "Patient Details",
-    description: "Edit patient demographics and IDs",
+    description: "Review patient details and IDs",
     icon: UserRound,
   },
   {
@@ -914,6 +915,12 @@ function ProcessingDocumentState({
   )
 }
 
+const accentActionButtonClass =
+  "rounded-lg border border-primary/25 bg-primary px-4 text-primary-foreground shadow-sm shadow-primary/10 transition-all duration-150 hover:bg-primary/92 hover:shadow-primary/15"
+
+const accentActionButtonCompactClass =
+  "rounded-lg border border-primary/25 bg-primary px-3 text-primary-foreground shadow-sm shadow-primary/10 transition-all duration-150 hover:bg-primary/92 hover:shadow-primary/15"
+
 export function BookingFormDialog({
   booking,
   open,
@@ -1583,13 +1590,18 @@ export function BookingFormDialog({
   const bookingDetailItems: DetailListItem[] = [
     { label: "Booking ID", value: booking?.apiBookingId ?? "-" },
     { label: "Order ID", value: booking?.orderId || "-" },
+    { label: "Booking Status", value: booking?.status || "-" },
     {
       label: "Phone Number",
       value: booking?.customerPhone ? (
         <div className="flex flex-wrap items-center gap-2">
           <span>{booking.customerPhone}</span>
           {sanitizePhoneForTel(booking.customerPhone) ? (
-            <Button variant="outline" size="sm" asChild className="h-8 rounded-lg px-3">
+            <Button
+              size="sm"
+              asChild
+              className={cn("h-8", accentActionButtonCompactClass)}
+            >
               <a href={`tel:${sanitizePhoneForTel(booking.customerPhone)}`}>
                 <Phone className="size-3.5" />
                 Call
@@ -1999,7 +2011,10 @@ export function BookingFormDialog({
                                         {!isCompletedBooking && !isSampleCollected ? (
                                           <Button
                                             type="button"
-                                            className="mobile-touch-target h-10 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+                                            className={cn(
+                                              "mobile-touch-target h-10",
+                                              accentActionButtonClass
+                                            )}
                                             disabled={submittingPatientId === patient.currentPatientId}
                                             onClick={() => {
                                               void handleSubmitPatientDetails(
@@ -2060,8 +2075,10 @@ export function BookingFormDialog({
                                       <div className="flex flex-wrap gap-2">
                                         <Button
                                           type="button"
-                                          variant="outline"
-                                          className="mobile-touch-target h-10 rounded-xl"
+                                          className={cn(
+                                            "mobile-touch-target h-10",
+                                            accentActionButtonClass
+                                          )}
                                           disabled={
                                             isDocumentProcessing ||
                                             (isCaptureDevice && isRequestingCameraPermission)
@@ -2108,7 +2125,12 @@ export function BookingFormDialog({
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <CardTitle className="text-sm font-semibold">Route Information</CardTitle>
                         {mapRouteUrl && hasCoordinates ? (
-                          <Button asChild type="button" variant="outline" size="sm">
+                          <Button
+                            asChild
+                            type="button"
+                            size="sm"
+                            className={accentActionButtonCompactClass}
+                          >
                             <a href={mapRouteUrl} target="_blank" rel="noreferrer">
                               <ExternalLink className="size-4" />
                               View Route in Map
@@ -2228,8 +2250,10 @@ export function BookingFormDialog({
                               {!isSampleDocumentReady ? (
                                 <Button
                                   type="button"
-                                  variant="outline"
-                                  className="mobile-touch-target h-10 rounded-xl"
+                                  className={cn(
+                                    "mobile-touch-target h-10",
+                                    accentActionButtonClass
+                                  )}
                                   onClick={() => setActiveSection("patients")}
                                 >
                                   Go to Patient Details
@@ -2266,8 +2290,8 @@ export function BookingFormDialog({
                                 {sampleErrorDetails?.retryable && lastDocumentScan ? (
                                   <Button
                                     type="button"
-                                    variant="outline"
                                     size="sm"
+                                    className={accentActionButtonCompactClass}
                                     disabled={isDocumentProcessing}
                                     onClick={handleRetryLastDocumentScan}
                                   >
@@ -2303,7 +2327,7 @@ export function BookingFormDialog({
                             <Button
                               type="button"
                               disabled
-                              className="mobile-touch-target h-12 w-full rounded-xl border border-emerald-500/35 bg-emerald-500/15 text-emerald-700 opacity-100 disabled:cursor-default disabled:opacity-100 dark:text-emerald-300"
+                              className="mobile-touch-target h-12 w-full rounded-lg border border-emerald-500/35 bg-emerald-500/15 text-emerald-700 opacity-100 disabled:cursor-default disabled:opacity-100 dark:text-emerald-300"
                             >
                               <CheckCircle2 className="size-4" />
                               Marked as Sample Collected
@@ -2316,7 +2340,10 @@ export function BookingFormDialog({
                             <div className="space-y-2">
                               <Button
                                 type="button"
-                                className="mobile-touch-target h-12 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+                                className={cn(
+                                  "mobile-touch-target h-12 w-full",
+                                  accentActionButtonClass
+                                )}
                                 disabled={!sampleFlowCanSubmit}
                                 onClick={openSampleSubmitConfirm}
                               >
@@ -2362,6 +2389,7 @@ export function BookingFormDialog({
                     <Button
                       type="button"
                       disabled={!sampleFlowCanSubmit || isSubmittingSample}
+                      className={accentActionButtonClass}
                       onClick={confirmSampleSubmit}
                     >
                       {isSubmittingSample ? "Submitting..." : "Confirm Submit"}
@@ -2388,7 +2416,7 @@ export function BookingFormDialog({
                 </Button>
                 <Button
                   type="button"
-                  className="mobile-touch-target h-11 rounded-xl"
+                  className={cn("mobile-touch-target h-11", accentActionButtonClass)}
                   disabled={activeSection === primarySection}
                   onClick={() => {
                     if (activeSection !== primarySection) {
